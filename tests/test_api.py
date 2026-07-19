@@ -187,6 +187,11 @@ def test_random_cluster_layout_uses_a_valid_seeded_3d_configuration() -> None:
     assert status_code == 200
     particles = response["particles"]
     assert len(particles) == payload["particle_count"]
+    assert all(
+        math.isclose(value * 10.0, round(value * 10.0), abs_tol=1.0e-12)
+        for particle in particles
+        for value in (particle["x_nm"], particle["y_nm"], particle["z_nm"])
+    )
     for left_index, left in enumerate(particles):
         for right in particles[left_index + 1 :]:
             center_distance_nm = math.dist(
@@ -197,3 +202,39 @@ def test_random_cluster_layout_uses_a_valid_seeded_3d_configuration() -> None:
                 left["diameter_nm"] + right["diameter_nm"]
             ) / 2.0
             assert surface_gap_nm > payload["minimum_surface_gap_nm"]
+
+
+def test_display_layout_endpoint_rounds_triangle_coordinates_without_breaking_gap_limit() -> None:
+    payload = {
+        "particles": [
+            {"diameter_nm": 20.0, "x_nm": 0.0, "y_nm": 0.0, "z_nm": 0.0},
+            {"diameter_nm": 20.0, "x_nm": 30.0, "y_nm": 0.0, "z_nm": 0.0},
+            {
+                "diameter_nm": 20.0,
+                "x_nm": 15.0,
+                "y_nm": 25.980762113533157,
+                "z_nm": 0.0,
+            },
+        ]
+    }
+
+    status_code, response = _post_json("/layouts/round-for-display", payload)
+
+    assert status_code == 200
+    particles = response["particles"]
+    assert particles[2]["y_nm"] == 26.0
+    assert all(
+        math.isclose(value * 10.0, round(value * 10.0), abs_tol=1.0e-12)
+        for particle in particles
+        for value in (particle["x_nm"], particle["y_nm"], particle["z_nm"])
+    )
+    for left_index, left in enumerate(particles):
+        for right in particles[left_index + 1 :]:
+            center_distance_nm = math.dist(
+                (left["x_nm"], left["y_nm"], left["z_nm"]),
+                (right["x_nm"], right["y_nm"], right["z_nm"]),
+            )
+            surface_gap_nm = center_distance_nm - (
+                left["diameter_nm"] + right["diameter_nm"]
+            ) / 2.0
+            assert surface_gap_nm >= 0.5

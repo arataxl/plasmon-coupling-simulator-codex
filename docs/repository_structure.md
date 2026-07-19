@@ -31,7 +31,7 @@ Phase 2では `src/physics/polarizability.py`、`src/physics/green_tensor.py`、
 │   ├── services/
 │   │   ├── simulation_service.py      # APIと計算コアをつなぐ計算オーケストレーション
 │   │   ├── job_manager.py             # ワーカースレッドの一時ジョブ、進捗、取消管理
-│   │   └── particle_layouts.py         # Test 5とUIで共有するランダム3D配置生成
+│   │   └── particle_layouts.py         # Test 5とUIで共有するランダム3D配置生成・表示用座標丸め
 │   ├── physics/
 │   │   ├── material_data.py           # Au光学定数の補間と適用範囲検査
 │   │   ├── mie_reference.py           # 単一球の完全Mie参照計算

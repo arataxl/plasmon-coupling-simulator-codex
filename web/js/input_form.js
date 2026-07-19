@@ -18,6 +18,16 @@ window.PlasmonInputForm = (() => {
     return numberFromInput(document.getElementById(id));
   }
 
+  function formatFormValue(value, field) {
+    if (!Number.isFinite(value)) {
+      return "";
+    }
+    if (["x_nm", "y_nm", "z_nm"].includes(field)) {
+      return value.toFixed(1);
+    }
+    return String(value);
+  }
+
   function updateMediumInput() {
     const preset = document.getElementById("medium-preset").value;
     const refractiveIndex = document.getElementById("medium-refractive-index");
@@ -87,6 +97,22 @@ window.PlasmonInputForm = (() => {
     return { errors, warnings };
   }
 
+  function updateQcmInputStatus(validation) {
+    const target = document.getElementById("qcm-input-status");
+    if (!target) {
+      return;
+    }
+    if (validation.errors.length > 0) {
+      target.textContent = "配置を修正してからQCM適用範囲を確認してください。";
+      return;
+    }
+    if (validation.warnings.some((warning) => warning.includes("QCMを自動適用"))) {
+      target.textContent = "この配置ではQCMを自動適用します。ユーザーによる無効化はできません。";
+      return;
+    }
+    target.textContent = "この配置ではQCMは適用されません。0.5〜1.0 nm未満で自動適用されます。";
+  }
+
   function renderValidation() {
     const result = validateParticles(readParticles());
     const target = document.getElementById("geometry-validation");
@@ -100,7 +126,16 @@ window.PlasmonInputForm = (() => {
     } else {
       target.textContent = "配置は入力範囲内です。";
     }
+    updateQcmInputStatus(result);
     return result;
+  }
+
+  function axisRange(values, maximumDiameterNm) {
+    const minimum = Math.min(...values);
+    const maximum = Math.max(...values);
+    const span = Math.max(maximum - minimum, maximumDiameterNm, 1.0);
+    const padding = Math.max(span * 0.22, maximumDiameterNm * 0.65, 5.0);
+    return [minimum - padding, maximum + padding];
   }
 
   function renderPreview() {
@@ -111,38 +146,74 @@ window.PlasmonInputForm = (() => {
       return;
     }
     const maximumDiameter = Math.max(...finiteParticles.map((particle) => particle.diameter_nm));
+    const xValues = finiteParticles.map((particle) => particle.x_nm);
+    const yValues = finiteParticles.map((particle) => particle.y_nm);
+    const zValues = finiteParticles.map((particle) => particle.z_nm);
     window.Plotly.react(
       "geometry-preview",
       [
         {
           type: "scatter3d",
           mode: "markers+text",
-          x: finiteParticles.map((particle) => particle.x_nm),
-          y: finiteParticles.map((particle) => particle.y_nm),
-          z: finiteParticles.map((particle) => particle.z_nm),
+          x: xValues,
+          y: yValues,
+          z: zValues,
           text: finiteParticles.map((particle, index) => ` ${index + 1}`),
+          customdata: finiteParticles.map((particle) => [particle.diameter_nm]),
           textposition: "top center",
+          textfont: { color: "#17324d", size: 12 },
           marker: {
-            size: finiteParticles.map((particle) => 7 + (22 * particle.diameter_nm) / maximumDiameter),
+            // scatter3d の marker.size は px。ズーム後も読める固定表示で相対径を示す。
+            size: finiteParticles.map((particle) => Math.max(12, (30 * particle.diameter_nm) / maximumDiameter)),
+            sizemode: "diameter",
+            sizeref: 1,
+            sizemin: 12,
             color: "#d69e2e",
-            line: { color: "#6b4200", width: 1 },
-            opacity: 0.88,
+            line: { color: "#6b4200", width: 1.5 },
+            opacity: 0.9,
           },
           hovertemplate:
-            "粒子 %{text}<br>x=%{x:.3f} nm<br>y=%{y:.3f} nm<br>z=%{z:.3f} nm<extra></extra>",
+            "粒子 %{text}<br>径=%{customdata[0]:.1f} nm<br>x=%{x:.1f} nm<br>y=%{y:.1f} nm<br>z=%{z:.1f} nm<extra></extra>",
         },
       ],
       {
-        margin: { t: 8, r: 8, b: 8, l: 8 },
+        margin: { t: 28, r: 28, b: 52, l: 56 },
         scene: {
-          xaxis: { title: "x (nm)" },
-          yaxis: { title: "y (nm)" },
-          zaxis: { title: "z (nm)" },
+          xaxis: {
+            title: { text: "x (nm)", font: { size: 12 } },
+            range: axisRange(xValues, maximumDiameter),
+            tickfont: { size: 11 },
+            nticks: 5,
+            gridcolor: "#d6e2ef",
+            backgroundcolor: "#f8fbff",
+          },
+          yaxis: {
+            title: { text: "y (nm)", font: { size: 12 } },
+            range: axisRange(yValues, maximumDiameter),
+            tickfont: { size: 11 },
+            nticks: 5,
+            gridcolor: "#d6e2ef",
+            backgroundcolor: "#f8fbff",
+          },
+          zaxis: {
+            title: { text: "z (nm)", font: { size: 12 } },
+            range: axisRange(zValues, maximumDiameter),
+            tickfont: { size: 11 },
+            nticks: 5,
+            gridcolor: "#d6e2ef",
+            backgroundcolor: "#f8fbff",
+          },
           aspectmode: "data",
+          dragmode: "orbit",
+          camera: {
+            eye: { x: 1.7, y: 1.7, z: 1.35 },
+            up: { x: 0, y: 0, z: 1 },
+            projection: { type: "orthographic" },
+          },
         },
         paper_bgcolor: "#ffffff",
       },
-      { responsive: true, displaylogo: false },
+      { responsive: true, displaylogo: false, scrollZoom: true },
     );
   }
 
@@ -155,7 +226,7 @@ window.PlasmonInputForm = (() => {
     const input = document.createElement("input");
     input.type = "number";
     input.step = "0.1";
-    input.value = value;
+    input.value = formatFormValue(value, field);
     input.dataset.field = field;
     input.setAttribute("aria-label", field);
     input.addEventListener("input", refreshGeometry);
@@ -200,24 +271,47 @@ window.PlasmonInputForm = (() => {
     renderParticleRows();
   }
 
-  function applyDimer() {
-    const diameterNm = numberValue("dimer-diameter-nm");
-    const gapNm = numberValue("dimer-gap-nm");
-    setParticles([
-      { diameter_nm: diameterNm, x_nm: 0, y_nm: 0, z_nm: 0 },
-      { diameter_nm: diameterNm, x_nm: diameterNm + gapNm, y_nm: 0, z_nm: 0 },
-    ]);
+  function showPresetError(error) {
+    const target = document.getElementById("geometry-validation");
+    target.textContent = error.message;
+    target.classList.add("has-error");
   }
 
-  function applyTrimer() {
-    const diameterNm = numberValue("trimer-diameter-nm");
-    const centerDistanceNm = numberValue("trimer-center-distance-nm");
-    const heightNm = (Math.sqrt(3) * centerDistanceNm) / 2;
-    setParticles([
-      { diameter_nm: diameterNm, x_nm: 0, y_nm: 0, z_nm: 0 },
-      { diameter_nm: diameterNm, x_nm: centerDistanceNm, y_nm: 0, z_nm: 0 },
-      { diameter_nm: diameterNm, x_nm: centerDistanceNm / 2, y_nm: heightNm, z_nm: 0 },
-    ]);
+  async function normalizePresetParticles(nextParticles) {
+    const response = await window.PlasmonApi.roundLayoutForDisplay(nextParticles);
+    setParticles(response.particles);
+  }
+
+  async function applyDimer() {
+    const button = document.getElementById("apply-dimer");
+    button.disabled = true;
+    try {
+      const diameterNm = numberValue("dimer-diameter-nm");
+      const gapNm = numberValue("dimer-gap-nm");
+      await normalizePresetParticles([
+        { diameter_nm: diameterNm, x_nm: 0, y_nm: 0, z_nm: 0 },
+        { diameter_nm: diameterNm, x_nm: diameterNm + gapNm, y_nm: 0, z_nm: 0 },
+      ]);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function applyTrimer() {
+    const button = document.getElementById("apply-trimer");
+    button.disabled = true;
+    try {
+      const diameterNm = numberValue("trimer-diameter-nm");
+      const centerDistanceNm = numberValue("trimer-center-distance-nm");
+      const heightNm = (Math.sqrt(3) * centerDistanceNm) / 2;
+      await normalizePresetParticles([
+        { diameter_nm: diameterNm, x_nm: 0, y_nm: 0, z_nm: 0 },
+        { diameter_nm: diameterNm, x_nm: centerDistanceNm, y_nm: 0, z_nm: 0 },
+        { diameter_nm: diameterNm, x_nm: centerDistanceNm / 2, y_nm: heightNm, z_nm: 0 },
+      ]);
+    } finally {
+      button.disabled = false;
+    }
   }
 
   async function applyRandomCluster() {
@@ -295,19 +389,40 @@ window.PlasmonInputForm = (() => {
     };
   }
 
+  function initializeTabs() {
+    const buttons = Array.from(document.querySelectorAll("[data-tab-target]"));
+    const panels = Array.from(document.querySelectorAll("[data-tab-panel]"));
+    function activateTab(button) {
+      const targetId = button.dataset.tabTarget;
+      buttons.forEach((candidate) => {
+        const selected = candidate === button;
+        candidate.setAttribute("aria-selected", String(selected));
+        candidate.tabIndex = selected ? 0 : -1;
+      });
+      panels.forEach((panel) => {
+        panel.hidden = panel.id !== targetId;
+      });
+    }
+    buttons.forEach((button) => {
+      button.addEventListener("click", () => activateTab(button));
+    });
+  }
+
   function initialize() {
     document.getElementById("medium-preset").addEventListener("change", updateMediumInput);
-    document.getElementById("apply-dimer").addEventListener("click", applyDimer);
-    document.getElementById("apply-trimer").addEventListener("click", applyTrimer);
+    document.getElementById("apply-dimer").addEventListener("click", () => {
+      applyDimer().catch(showPresetError);
+    });
+    document.getElementById("apply-trimer").addEventListener("click", () => {
+      applyTrimer().catch(showPresetError);
+    });
     document.getElementById("apply-random-cluster").addEventListener("click", () => {
-      applyRandomCluster().catch((error) => {
-        document.getElementById("geometry-validation").textContent = error.message;
-        document.getElementById("geometry-validation").classList.add("has-error");
-      });
+      applyRandomCluster().catch(showPresetError);
     });
     document.getElementById("add-particle").addEventListener("click", addParticle);
+    initializeTabs();
     updateMediumInput();
-    applyDimer();
+    applyDimer().catch(showPresetError);
   }
 
   return { buildPayload, initialize, refreshGeometry };

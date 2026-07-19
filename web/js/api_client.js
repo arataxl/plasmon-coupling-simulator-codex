@@ -42,10 +42,20 @@ window.PlasmonApi = (() => {
     return parseResponse(response, "ランダム配置を生成できませんでした。");
   }
 
+  async function roundLayoutForDisplay(particles) {
+    const response = await fetch("/layouts/round-for-display", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ particles }),
+    });
+    return parseResponse(response, "プリセット座標を表示用に整形できませんでした。");
+  }
+
   return {
     simulate,
     startSimulationJob,
     cancelSimulationJob,
     generateRandomCluster,
+    roundLayoutForDisplay,
   };
 })();

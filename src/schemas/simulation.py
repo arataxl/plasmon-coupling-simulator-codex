@@ -129,6 +129,40 @@ class RandomClusterLayoutInput(BaseModel):
         return _require_finite(value, field_name=field_name)
 
 
+class DisplayLayoutInput(BaseModel):
+    """UIプリセットを 0.1 nm 表示へ正規化するための入力。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    particles: list[ParticleInput] = Field(min_length=1, max_length=20)
+
+    @model_validator(mode="after")
+    def validate_source_surface_gaps(self) -> Self:
+        for left_index, left_particle in enumerate(self.particles):
+            for right_index in range(left_index + 1, len(self.particles)):
+                right_particle = self.particles[right_index]
+                center_distance_nm = math.dist(
+                    (left_particle.x_nm, left_particle.y_nm, left_particle.z_nm),
+                    (right_particle.x_nm, right_particle.y_nm, right_particle.z_nm),
+                )
+                surface_gap_nm = center_distance_nm - (
+                    left_particle.diameter_nm + right_particle.diameter_nm
+                ) / 2.0
+                if (
+                    surface_gap_nm < MIN_SURFACE_GAP_NM
+                    and not math.isclose(
+                        surface_gap_nm,
+                        MIN_SURFACE_GAP_NM,
+                        rel_tol=0.0,
+                        abs_tol=_GAP_COMPARISON_ABS_TOLERANCE_NM,
+                    )
+                ):
+                    raise ValueError(
+                        "source preset has a surface gap below the 0.5 nm model limit"
+                    )
+        return self
+
+
 class SimulationInput(BaseModel):
     """粒子間ギャップを含めて検証するMVP入力。"""
 

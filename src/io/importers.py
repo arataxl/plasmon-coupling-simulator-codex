@@ -14,9 +14,13 @@ class SimulationResultImportError(ValueError):
 
 
 def simulation_result_from_json(serialized: str | bytes) -> SimulationResult:
-    """出力JSONをPydantic契約で検証し、再計算可能な結果として返す。"""
+    """ブラウザ付加のダウンロード来歴を除き、結果を再計算可能な形で読む。"""
     try:
-        return SimulationResult.model_validate_json(serialized)
+        parsed = json.loads(serialized)
+        if isinstance(parsed, dict):
+            # ブラウザ出力だけに付加する時刻・ファイル名来歴は、再計算入力ではない。
+            parsed.pop("download_metadata", None)
+        return SimulationResult.model_validate(parsed)
     except (json.JSONDecodeError, ValidationError, TypeError, ValueError) as error:
         raise SimulationResultImportError(
             "simulation result JSON does not match the reproducibility schema"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import math
 
 import pytest
@@ -123,3 +124,27 @@ def test_json_round_trip_retains_qcm_metadata_and_recalculates_identically(
     assert restored.qcm_metadata.qcm_applied is True
     assert restored.qcm_metadata.qcm_parameter_status == "provisional_digitized"
     assert simulation_result_to_json(recalculated) == serialized
+
+
+def test_json_import_keeps_recalculation_compatible_with_browser_download_metadata(
+    optical_constants: OpticalConstants,
+    qcm_parameter_table,
+) -> None:
+    """ブラウザが付加する条件・時刻来歴を含んでも、再計算入力は失わない。"""
+    original = run_simulation(
+        _qcm_simulation_input(),
+        optical_constants=optical_constants,
+        qcm_parameter_table=qcm_parameter_table,
+    )
+    browser_export = json.loads(simulation_result_to_json(original))
+    browser_export["download_metadata"] = {
+        "particle_count": 2,
+        "minimum_surface_gap_nm": 0.5,
+        "qcm_applied": True,
+        "result_timestamp_utc": "2026-07-20T00:00:00.000Z",
+    }
+
+    restored = simulation_result_from_json(json.dumps(browser_export))
+
+    assert restored.input == original.input
+    assert restored.qcm_metadata == original.qcm_metadata

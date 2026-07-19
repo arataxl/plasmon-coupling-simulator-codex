@@ -16,15 +16,19 @@ from src.physics.material_data import OpticalConstants
 from src.physics.qcm import GammaGParameterTable
 from src.schemas.result import SimulationResult
 from src.schemas.simulation import (
+    DisplayLayoutInput,
     ParticleInput,
     RandomClusterLayoutInput,
     SimulationInput,
 )
 from src.services.job_manager import SimulationJobManager, SimulationJobNotFoundError
 from src.services.particle_layouts import (
+    DISPLAY_COORDINATE_DECIMALS,
+    DISPLAY_COORDINATE_STEP_M,
     ParticleLayoutError,
     generate_random_nonoverlapping_configuration,
     recommended_placement_half_width_m,
+    round_layout_coordinates_for_display,
 )
 from src.services.simulation_service import (
     MAX_STREAM_SPECTRUM_POINTS,
@@ -114,14 +118,81 @@ def random_cluster_layout(
         )
     except ParticleLayoutError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+    try:
+        display_positions_m = round_layout_coordinates_for_display(
+            positions_m=positions_m,
+            diameters_m=diameters_m,
+            target_minimum_surface_gap_m=minimum_gap_m + DISPLAY_COORDINATE_STEP_M,
+        )
+    except ParticleLayoutError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
     return {
         "particles": [
             ParticleInput(
-                diameter_nm=float(metres_to_nanometres(diameter)),
-                x_nm=float(metres_to_nanometres(position[0])),
-                y_nm=float(metres_to_nanometres(position[1])),
-                z_nm=float(metres_to_nanometres(position[2])),
+                diameter_nm=round(
+                    float(metres_to_nanometres(diameter)), DISPLAY_COORDINATE_DECIMALS
+                ),
+                x_nm=round(
+                    float(metres_to_nanometres(position[0])),
+                    DISPLAY_COORDINATE_DECIMALS,
+                ),
+                y_nm=round(
+                    float(metres_to_nanometres(position[1])),
+                    DISPLAY_COORDINATE_DECIMALS,
+                ),
+                z_nm=round(
+                    float(metres_to_nanometres(position[2])),
+                    DISPLAY_COORDINATE_DECIMALS,
+                ),
             )
-            for position, diameter in zip(positions_m, diameters_m, strict=True)
+            for position, diameter in zip(display_positions_m, diameters_m, strict=True)
+        ]
+    }
+
+
+@router.post("/layouts/round-for-display")
+def round_layout_for_display(
+    request: DisplayLayoutInput,
+) -> dict[str, list[ParticleInput]]:
+    """任意プリセットの座標を、物理安全装置を保って 0.1 nm 表示へ整形する。"""
+    positions_m = [
+        [
+            float(nanometres_to_metres(particle.x_nm)),
+            float(nanometres_to_metres(particle.y_nm)),
+            float(nanometres_to_metres(particle.z_nm)),
+        ]
+        for particle in request.particles
+    ]
+    diameters_m = [
+        float(nanometres_to_metres(particle.diameter_nm))
+        for particle in request.particles
+    ]
+    try:
+        display_positions_m = round_layout_coordinates_for_display(
+            positions_m=positions_m,
+            diameters_m=diameters_m,
+        )
+    except ParticleLayoutError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    return {
+        "particles": [
+            ParticleInput(
+                diameter_nm=round(particle.diameter_nm, DISPLAY_COORDINATE_DECIMALS),
+                x_nm=round(
+                    float(metres_to_nanometres(position[0])),
+                    DISPLAY_COORDINATE_DECIMALS,
+                ),
+                y_nm=round(
+                    float(metres_to_nanometres(position[1])),
+                    DISPLAY_COORDINATE_DECIMALS,
+                ),
+                z_nm=round(
+                    float(metres_to_nanometres(position[2])),
+                    DISPLAY_COORDINATE_DECIMALS,
+                ),
+            )
+            for particle, position in zip(
+                request.particles, display_positions_m, strict=True
+            )
         ]
     }

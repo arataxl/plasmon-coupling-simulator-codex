@@ -14,142 +14,210 @@
   </head>
   <body>
     <header class="site-header">
-      <div>
+      <div class="header-content">
         <p class="eyebrow">LOCAL · OFFLINE AFTER SETUP</p>
         <h1>Plasmonic Coupling Simulator</h1>
         <p>
-          Auナノ球のCDA/QCMスペクトルを、条件探索のために計算します。実験の定量再現器ではありません。
+          Auナノ球のCDA/QCMスペクトルを、実験の定量再現ではなく条件探索のために計算します。
         </p>
       </div>
     </header>
 
     <main class="page-layout">
       <section class="panel input-panel" aria-labelledby="input-title">
-        <h2 id="input-title">計算条件</h2>
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">CONFIGURATION</p>
+            <h2 id="input-title">計算条件</h2>
+          </div>
+          <span class="input-limit">最大20粒子</span>
+        </div>
         <p class="form-help">
-          粒子ごとに径と3D中心座標を指定できます。計算前に配置プレビューで重なりと近接ギャップを確認してください。
+          プリセットまたは個別の3D座標を入力し、計算前に配置と表面間ギャップを確認してください。
         </p>
+
         <form id="simulation-form">
-          <fieldset>
-            <legend>粒子配置プリセット</legend>
-            <div class="preset-grid">
-              <section class="preset-card" aria-label="二量体プリセット">
-                <h3>二量体</h3>
-                <label>
-                  径 (nm)
-                  <input id="dimer-diameter-nm" type="number" min="2" max="100" step="0.1" value="20" />
-                </label>
-                <label>
-                  表面間ギャップ (nm)
-                  <input id="dimer-gap-nm" type="number" min="0.5" step="0.1" value="5" />
-                </label>
-                <button id="apply-dimer" type="button">二量体を入力</button>
-              </section>
-              <section class="preset-card" aria-label="正三角形三量体プリセット">
-                <h3>正三角形三量体</h3>
-                <label>
-                  径 (nm)
-                  <input id="trimer-diameter-nm" type="number" min="2" max="100" step="0.1" value="20" />
-                </label>
-                <label>
-                  中心間距離 (nm)
-                  <input id="trimer-center-distance-nm" type="number" min="0.5" step="0.1" value="30" />
-                </label>
-                <button id="apply-trimer" type="button">三量体を入力</button>
-              </section>
-              <section class="preset-card" aria-label="ランダムクラスタプリセット">
-                <h3>ランダムクラスタ</h3>
-                <label>
-                  粒子数
-                  <input id="random-particle-count" type="number" min="1" max="20" step="1" value="5" />
-                </label>
-                <label>
-                  平均径 (nm)
-                  <input id="random-mean-diameter-nm" type="number" min="2" max="100" step="0.1" value="20" />
-                </label>
-                <label>
-                  最小表面間ギャップ (nm)
-                  <input id="random-minimum-gap-nm" type="number" min="0.5" step="0.1" value="5" />
-                </label>
-                <label>
-                  seed
-                  <input id="random-seed" type="number" min="0" step="1" value="20260720" />
-                </label>
-                <button id="apply-random-cluster" type="button">ランダム配置を入力</button>
-              </section>
-            </div>
-          </fieldset>
+          <div class="configuration-tabs" role="tablist" aria-label="計算条件の分類">
+            <button
+              id="particle-tab-button"
+              class="configuration-tab"
+              type="button"
+              role="tab"
+              aria-selected="true"
+              aria-controls="particle-tab"
+              data-tab-target="particle-tab"
+            >
+              粒子配置
+            </button>
+            <button
+              id="optics-tab-button"
+              class="configuration-tab"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="optics-tab"
+              data-tab-target="optics-tab"
+              tabindex="-1"
+            >
+              波長・入射条件
+            </button>
+            <button
+              id="qcm-tab-button"
+              class="configuration-tab"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="qcm-tab"
+              data-tab-target="qcm-tab"
+              tabindex="-1"
+            >
+              QCM・適用範囲
+            </button>
+          </div>
 
-          <fieldset>
-            <legend>個別粒子の3D座標</legend>
-            <div class="particle-table-wrap">
-              <table class="particle-table">
-                <thead>
-                  <tr>
-                    <th scope="col">#</th>
-                    <th scope="col">径 (nm)</th>
-                    <th scope="col">x (nm)</th>
-                    <th scope="col">y (nm)</th>
-                    <th scope="col">z (nm)</th>
-                    <th scope="col"><span class="visually-hidden">削除</span></th>
-                  </tr>
-                </thead>
-                <tbody id="particle-rows"></tbody>
-              </table>
-            </div>
-            <button id="add-particle" type="button">粒子を追加（最大20個）</button>
-            <p id="geometry-validation" class="geometry-validation" role="status" aria-live="polite"></p>
-            <div id="geometry-preview" class="geometry-preview" aria-label="粒子配置の3Dプレビュー"></div>
-          </fieldset>
+          <section id="particle-tab" class="tab-panel" role="tabpanel" aria-labelledby="particle-tab-button" data-tab-panel>
+            <fieldset>
+              <legend>粒子配置プリセット</legend>
+              <div class="preset-grid">
+                <section class="preset-card" aria-label="二量体のプリセット">
+                  <h3>二量体</h3>
+                  <label>
+                    径 (nm)
+                    <input id="dimer-diameter-nm" type="number" min="2" max="100" step="0.1" value="20" />
+                  </label>
+                  <label>
+                    表面間ギャップ (nm)
+                    <input id="dimer-gap-nm" type="number" min="0.5" step="0.1" value="5" />
+                  </label>
+                  <button id="apply-dimer" type="button">二量体を入力</button>
+                </section>
+                <section class="preset-card" aria-label="正三角形三量体のプリセット">
+                  <h3>正三角形三量体</h3>
+                  <label>
+                    径 (nm)
+                    <input id="trimer-diameter-nm" type="number" min="2" max="100" step="0.1" value="20" />
+                  </label>
+                  <label>
+                    中心間距離 (nm)
+                    <input id="trimer-center-distance-nm" type="number" min="0.5" step="0.1" value="30" />
+                  </label>
+                  <button id="apply-trimer" type="button">三量体を入力</button>
+                </section>
+                <section class="preset-card" aria-label="ランダムクラスタのプリセット">
+                  <h3>ランダムクラスタ</h3>
+                  <label>
+                    粒子数
+                    <input id="random-particle-count" type="number" min="1" max="20" step="1" value="5" />
+                  </label>
+                  <label>
+                    平均径 (nm)
+                    <input id="random-mean-diameter-nm" type="number" min="2" max="100" step="0.1" value="20" />
+                  </label>
+                  <label>
+                    最小表面間ギャップ (nm)
+                    <input id="random-minimum-gap-nm" type="number" min="0.5" step="0.1" value="5" />
+                  </label>
+                  <label>
+                    seed
+                    <input id="random-seed" type="number" min="0" step="1" value="20260720" />
+                  </label>
+                  <button id="apply-random-cluster" type="button">ランダム配置を入力</button>
+                </section>
+              </div>
+            </fieldset>
 
-          <fieldset>
-            <legend>波長と媒質</legend>
-            <div class="input-grid">
+            <fieldset>
+              <legend>個別粒子の3D座標</legend>
+              <div class="particle-table-wrap">
+                <table class="particle-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">#</th>
+                      <th scope="col">径 (nm)</th>
+                      <th scope="col">x (nm)</th>
+                      <th scope="col">y (nm)</th>
+                      <th scope="col">z (nm)</th>
+                      <th scope="col"><span class="visually-hidden">操作</span></th>
+                    </tr>
+                  </thead>
+                  <tbody id="particle-rows"></tbody>
+                </table>
+              </div>
+              <button id="add-particle" class="secondary-button" type="button">粒子を追加（最大20個）</button>
+              <p id="geometry-validation" class="geometry-validation" role="status" aria-live="polite"></p>
+              <div class="preview-heading">
+                <div>
+                  <h3>3D配置プレビュー</h3>
+                  <p>マーカーは径の相対表示です。正確な径と座標はホバーまたは入力表で確認できます。</p>
+                </div>
+              </div>
+              <div id="geometry-preview" class="geometry-preview" aria-label="粒子配置の3Dプレビュー"></div>
+            </fieldset>
+          </section>
+
+          <section id="optics-tab" class="tab-panel" role="tabpanel" aria-labelledby="optics-tab-button" data-tab-panel hidden>
+            <fieldset>
+              <legend>波長範囲</legend>
+              <div class="input-grid">
+                <label>
+                  開始波長 (nm)
+                  <input id="start-wavelength-nm" type="number" min="200" max="1500" step="1" value="450" required />
+                </label>
+                <label>
+                  終了波長 (nm)
+                  <input id="end-wavelength-nm" type="number" min="200" max="1500" step="1" value="850" required />
+                </label>
+                <label>
+                  刻み (nm)
+                  <input id="wavelength-step-nm" type="number" min="0.1" step="0.1" value="10" required />
+                </label>
+              </div>
+            </fieldset>
+            <fieldset>
+              <legend>媒質と偏光</legend>
               <label>
-                開始波長 (nm)
-                <input id="start-wavelength-nm" type="number" min="200" max="1500" step="1" value="450" required />
+                媒質
+                <select id="medium-preset" name="medium-preset">
+                  <option value="water">water (n = 1.33)</option>
+                  <option value="ethanol">ethanol (n = 1.361)</option>
+                  <option value="custom">custom</option>
+                </select>
               </label>
               <label>
-                終了波長 (nm)
-                <input id="end-wavelength-nm" type="number" min="200" max="1500" step="1" value="850" required />
+                媒質屈折率 n<sub>medium</sub>
+                <input id="medium-refractive-index" type="number" min="0.01" step="0.001" value="1.33" required />
               </label>
               <label>
-                刻み (nm)
-                <input id="wavelength-step-nm" type="number" min="0.1" step="0.1" value="10" required />
+                偏光方向（平面波のz伝搬）
+                <select id="polarization" name="polarization">
+                  <option value="x">x軸偏光</option>
+                  <option value="y">y軸偏光</option>
+                </select>
               </label>
-            </div>
-            <label>
-              媒質
-              <select id="medium-preset" name="medium-preset">
-                <option value="water">water (n = 1.33)</option>
-                <option value="ethanol">ethanol (n = 1.361)</option>
-                <option value="custom">custom</option>
-              </select>
-            </label>
-            <label>
-              屈折率 n<sub>medium</sub>
-              <input id="medium-refractive-index" type="number" min="0.01" step="0.001" value="1.33" required />
-            </label>
-            <p class="form-help">
-              プリセットは固定屈折率として扱います。温度・波長分散・吸収はこのMVPでは扱いません。
-            </p>
-          </fieldset>
+              <p class="form-help">
+                プリセットは固定実屈折率として扱います。平面波の伝搬方向・波長依存の偏光・角度はこのMVPでは扱いません。
+              </p>
+            </fieldset>
+          </section>
 
-          <fieldset>
-            <legend>偏光</legend>
-            <label>
-              偏光方向（伝搬方向はz軸）
-              <select id="polarization" name="polarization">
-                <option value="x">x軸偏光</option>
-                <option value="y">y軸偏光</option>
-              </select>
-            </label>
-          </fieldset>
+          <section id="qcm-tab" class="tab-panel" role="tabpanel" aria-labelledby="qcm-tab-button" data-tab-panel hidden>
+            <fieldset class="qcm-input-card">
+              <legend>QCMの自動適用</legend>
+              <p id="qcm-input-status" class="qcm-input-status" role="status"></p>
+              <ul class="scope-list">
+                <li><strong>0.5 nm未満：</strong>計算をブロックします。</li>
+                <li><strong>0.5〜1.0 nm未満：</strong>QCMを必ず自動適用します。</li>
+                <li><strong>1.0〜5.0 nm：</strong>CDAの近似限界を警告します。</li>
+              </ul>
+              <p class="form-help">
+                QCMの距離依存値はEsteban et al. (2012) Fig. 2dのAu実線から抽出した暫定表です。計算完了後の注記を開くと、出典・読取誤差・校正点未提供などの来歴を確認できます。
+              </p>
+            </fieldset>
+          </section>
 
-          <p class="safety-note">
-            0.5 nm未満の表面間ギャップは計算できません。0.5〜1.0 nmではQCMを自動適用します。
-          </p>
-          <button id="simulate-button" type="submit">スペクトルを計算</button>
+          <div class="form-actions">
+            <button id="simulate-button" class="primary-action" type="submit">スペクトルを計算</button>
+          </div>
         </form>
         <div class="progress-area" aria-live="polite">
           <progress id="simulation-progress" max="1" value="0">0%</progress>
@@ -162,8 +230,9 @@
       <section class="panel result-panel" aria-labelledby="result-title">
         <div class="result-heading">
           <div>
+            <p class="section-kicker">RESULTS</p>
             <h2 id="result-title">計算結果</h2>
-            <p>表示単位：nm²（ダウンロードデータの断面積はm²、効率は無次元）</p>
+            <p>断面積は nm² 表示です。ダウンロードには計算条件とタイムスタンプを付記します。</p>
           </div>
           <div class="download-actions">
             <button id="download-csv" type="button" disabled>CSVをダウンロード</button>
@@ -171,17 +240,25 @@
           </div>
         </div>
 
-        <aside id="qcm-notice" class="qcm-notice" aria-live="polite" hidden>
-          <strong>暫定デジタイズ値による参考値</strong>
-          <span>Esteban et al. (2012), Fig. 2d、読取誤差5-10%</span>
-        </aside>
+        <details id="qcm-notice" class="qcm-notice" aria-live="polite" hidden>
+          <summary>QCM適用結果は傾向探索用の参考値です。BEM/DDA/FDTD/TDDFTとの定量的一致は保証しません。</summary>
+          <dl class="qcm-details">
+            <div><dt>パラメータ状態</dt><dd id="qcm-detail-status"></dd></div>
+            <div><dt>出典</dt><dd id="qcm-detail-source"></dd></div>
+            <div><dt>図</dt><dd id="qcm-detail-figure"></dd></div>
+            <div><dt>対象曲線</dt><dd id="qcm-detail-curve"></dd></div>
+            <div><dt>読取誤差</dt><dd id="qcm-detail-uncertainty"></dd></div>
+            <div><dt>校正点</dt><dd id="qcm-detail-calibration"></dd></div>
+            <div><dt>補間法</dt><dd id="qcm-detail-interpolation"></dd></div>
+          </dl>
+        </details>
         <ul id="warning-list" class="warning-list" aria-live="polite"></ul>
         <div id="spectrum-plot" class="spectrum-plot" aria-label="CDAスペクトルのグラフ"></div>
       </section>
     </main>
 
     <footer class="site-footer">
-      QCM適用結果は傾向探索用の参考値です。BEM/DDA/FDTD/TDDFTとの定量的一致は保証しません。
+      QCM適用結果は暫定デジタイズ表に基づく参考値です。実験の定量再現やBEM/DDA/FDTD/TDDFTとの定量一致は保証しません。
     </footer>
   </body>
 </html>
