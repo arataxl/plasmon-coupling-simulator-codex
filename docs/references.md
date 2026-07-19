@@ -26,3 +26,14 @@
      Computer Physics Communications 183, 370–381 (2012).
    - 用途：将来的なナノスター、ナノキャップ、少数粒子系の精密検証
    - 注意：初版の必須依存関係にはしない
+
+5. 量子補正モデル（QCM）
+   - Esteban, R.; Borisov, A. G.; Nordlander, P.; Aizpurua, J.
+     Bridging quantum and classical plasmonics with a quantum-corrected model.
+     Nature Communications 3, 825 (2012).
+     DOI: 10.1038/ncomms1806
+   - 用途：サブナノメートルの粒子間ギャップにおけるトンネル効果を、
+     等価的な局所誘電応答として古典電磁場計算へ組み込むQCMの理論的根拠
+   - 注意：本ツールでの適用範囲と距離しきい値は、原論文の数値を
+     そのまま流用せず、`docs/physics_assumptions.md` と
+     `docs/QCM統合指示書.md` の運用ルールに従う
