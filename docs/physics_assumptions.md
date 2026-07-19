@@ -35,7 +35,7 @@ Extinction、Scattering、Absorption スペクトルの変化を高速に探索�
 ## 計算モデル
 - 内部物理計算には **SI単位系（基本単位: m, kg, s, A）** を用い、入出力時のみ
   nm 単位との相互変換を行う。Draine型の式（CGS表記）をSI単位系で再導出した
-  結果は project_reference.md に記録する。
+  結果は `docs/project_reference.md` に記録する。
 - 単一球の参照解には、完全Mie理論を用いる
 - 複数球の高速近似には、結合双極子近似
   (Coupled Dipole Approximation; CDA) を用いる

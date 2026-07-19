@@ -5,7 +5,9 @@
 本書は `docs/SPEC.md` と `docs/quantum_corrected_model_integration.md` を
 実装へ展開するための構成案である。以下のツリーは**実装時の目標構成**であり、
 Phase 1では依存定義、`src/physics/material_data.py`、
-`src/physics/mie_reference.py`、`src/schemas/simulation.py`、Test 1だけを作成した。
+`src/physics/mie_reference.py`、`src/schemas/simulation.py`、Test 1を作成した。
+Phase 2では `src/physics/polarizability.py`、`src/physics/green_tensor.py`、
+`src/physics/cda_solver.py`、Test 2・3を追加した。
 物理的な適用範囲は既存の物理前提文書を正とする。
 
 ## 目標ディレクトリツリー
@@ -78,10 +80,11 @@ Phase 1では依存定義、`src/physics/material_data.py`、
     ├── quantum_corrected_model_integration.md
     ├── validation_plan.md
     ├── references.md
+    ├── project_reference.md
     └── repository_structure.md
 ```
 
-Phase 1以外の `src/` モジュール、`web/`、`data/qcm/`、Test 2〜6はこの構成案の
+Phase 2以外の `src/` モジュール、`web/`、`data/qcm/`、Test 4〜6はこの構成案の
 後続実装対象である。CSV/JSONはブラウザへのダウンロードとして返し、計算結果を
 サーバー上の実行ディレクトリへ残さない。この方針により、取消時に部分データを
 保存しないというMVP要件を満たしやすくする。
