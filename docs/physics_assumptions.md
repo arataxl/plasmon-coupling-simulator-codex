@@ -46,6 +46,13 @@ Extinction、Scattering、Absorption スペクトルの変化を高速に探索�
   分極率（FCDA）とする。
 - 5 nm付近の小粒子を考慮し、Kreibig型の緩和定数サイズ補正
   （A=1.0, v_F=1.4e6 m/s）を切替可能なオプション（デフォルトOFF）として実装する。
+- **Kreibig Drudeパラメータの確認状況**：Auの
+  `plasma_frequency_rad_s` と `bulk_damping_rad_s` は、Kreibig & Vollmer
+  (1995) および Johnson and Christy (1972) の本リポジトリで確認可能な
+  機械可読な一次資料から、単位・定義・フィット条件を含む一組の数値として確認できていない。
+  Kreibig補正は一次資料の数値確認待ちのため、MVPでは既定OFF・利用者による出典付き
+  手動入力のみとする。Johnson and Christyの `n + ik` 表から本リポジトリで独自に
+  フィットまたは推定して値を補わない。
 - 各波長で相互作用を含む複素線形方程式を解く
 - Mie理論は単一球の参照・検証用であり、
   Mie理論そのものをそのまま多粒子相互作用の解法として使用しない

@@ -84,7 +84,7 @@ Phase 2では `src/physics/polarizability.py`、`src/physics/green_tensor.py`、
     └── repository_structure.md
 ```
 
-Phase 2以外の `src/` モジュール、`web/`、`data/qcm/`、Test 4〜6はこの構成案の
+Phase 2以外の `src/` モジュール、`web/`、`data/qcm/`、Test 4・6はこの構成案の
 後続実装対象である。CSV/JSONはブラウザへのダウンロードとして返し、計算結果を
 サーバー上の実行ディレクトリへ残さない。この方針により、取消時に部分データを
 保存しないというMVP要件を満たしやすくする。

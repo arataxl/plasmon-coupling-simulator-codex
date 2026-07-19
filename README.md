@@ -5,8 +5,8 @@
 実験データの定量再現器や、BEM/DDA/FDTD/TDDFTの代替を目的にはしません。
 
 > 状態：Phase 2完了。Johnson and Christy材料データ、単一球の完全Mie参照計算、
-> FCDA分極率、遅延 Green tensor、CDA中核、入力スキーマ、Validation Test 1〜3の
-> 基礎試験は実装済みです。API、UI、QCM、Test 4〜6、セットアップ用バッチは未実装です。
+> FCDA分極率、遅延 Green tensor、CDA中核、入力スキーマ、Validation Test 1〜3・5の
+> 基礎試験は実装済みです。API、UI、QCM、Test 4・6、セットアップ用バッチは未実装です。
 
 ## MVPで目指すこと
 
@@ -90,8 +90,8 @@ run_app.bat
 数値しきい値、QCMの4層/5層比較、Mie基準配列は
 [docs/validation_plan.md](docs/validation_plan.md) と [docs/SPEC.md](docs/SPEC.md) を正とします。
 
-Phase 2までにTest 1、入力スキーマ、Test 2、Test 3の基礎pytestを実装済みです。
-Test 4〜6とAPI/SSEの統合試験は後続Phaseで追加します。提出時には、実行環境・依存
+Phase 2までにTest 1、入力スキーマ、Test 2、Test 3、Test 5の基礎pytestを実装済みです。
+Test 4・6とAPI/SSEの統合試験は後続Phaseで追加します。提出時には、実行環境・依存
 バージョン・pass実績を記録します。
 
 ## 開発におけるAI利用記録（Build Week提出用）
