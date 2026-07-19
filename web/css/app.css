@@ -127,6 +127,17 @@ select {
   padding: clamp(1rem, 2.2vw, 1.6rem);
 }
 
+.analysis-workspace {
+  display: grid;
+  gap: clamp(1rem, 2vw, 1.5rem);
+  min-width: 0;
+}
+
+.preview-panel {
+  min-width: 0;
+  padding: clamp(1rem, 2.2vw, 1.6rem);
+}
+
 .panel-heading,
 .result-heading,
 .preview-heading {
@@ -572,26 +583,8 @@ button:disabled {
   gap: 0.5rem;
 }
 
-.result-content {
-  display: grid;
-  grid-template-columns: minmax(14rem, 0.72fr) minmax(0, 1.58fr);
-  align-items: start;
-  gap: clamp(0.85rem, 1.8vw, 1.25rem);
-}
-
-.layout-preview-card {
-  position: sticky;
-  top: 0.85rem;
-  min-width: 0;
-  padding: 0.8rem;
-  border: 1px solid #d8e4ed;
-  border-radius: 0.65rem;
-  background: linear-gradient(145deg, #fbfdff, #f5f9fc);
-}
-
 .preview-heading {
-  align-items: end;
-  margin-bottom: 0.65rem;
+  margin-bottom: 0.9rem;
 }
 
 .preview-heading p {
@@ -600,15 +593,11 @@ button:disabled {
 }
 
 .geometry-preview {
-  height: clamp(21rem, 43vh, 30rem);
-  min-height: 21rem;
+  height: clamp(28rem, 55vh, 39rem);
+  min-height: 28rem;
   border: 1px solid #d8e4ed;
   border-radius: 0.55rem;
   background: #ffffff;
-}
-
-.result-main {
-  min-width: 0;
 }
 
 .qcm-notice {
@@ -710,10 +699,6 @@ button:disabled {
     min-height: 0;
   }
 
-  .result-content {
-    grid-template-columns: minmax(16rem, 0.72fr) minmax(0, 1.58fr);
-  }
-
   .spectrum-plot {
     min-height: 34rem;
   }
@@ -731,13 +716,8 @@ button:disabled {
   }
 
   .input-grid,
-  .preset-card,
-  .result-content {
+  .preset-card {
     grid-template-columns: 1fr;
-  }
-
-  .layout-preview-card {
-    position: static;
   }
 
   .panel-heading,
@@ -751,8 +731,8 @@ button:disabled {
   }
 
   .geometry-preview {
-    height: 22rem;
-    min-height: 22rem;
+    height: 28rem;
+    min-height: 28rem;
   }
 
   .spectrum-plot {

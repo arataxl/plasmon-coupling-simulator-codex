@@ -3,18 +3,16 @@ window.PlasmonInputForm = (() => {
   const minimumDiameterNm = 2;
   const maximumDiameterNm = 100;
   const minimumGapNm = 0.5;
-  const defaultCameraEye = Object.freeze({ x: 1.9, y: 1.9, z: 1.45 });
-  const defaultCameraDistance = Math.hypot(
-    defaultCameraEye.x,
-    defaultCameraEye.y,
-    defaultCameraEye.z,
-  );
+  const sphereLatitudeSegments = 8;
+  const sphereLongitudeSegments = 12;
+  const sphereFillColor = "#d69e2e";
+  const sphereOutlineColor = "#6b4200";
+  const labelDirection = Object.freeze({ x: 0.3, y: 0.3, z: 0.9055385138 });
   const mediumPresets = {
     water: { name: "water", refractiveIndex: 1.33 },
     ethanol: { name: "ethanol", refractiveIndex: 1.361 },
   };
   let particles = [];
-  let previewState = null;
 
   function t(key, parameters) {
     return window.PlasmonI18n.t(key, parameters);
@@ -153,87 +151,95 @@ window.PlasmonInputForm = (() => {
     return [minimum - padding, maximum + padding];
   }
 
-  function clamp(value, minimum, maximum) {
-    return Math.min(Math.max(value, minimum), maximum);
+  function niceTickStep(range) {
+    const rawStep = (range[1] - range[0]) / 5.0;
+    const powerOfTen = 10 ** Math.floor(Math.log10(Math.max(rawStep, 1.0e-12)));
+    const normalizedStep = rawStep / powerOfTen;
+    const multiplier = [1.0, 2.0, 5.0, 10.0].find((candidate) => normalizedStep <= candidate);
+    return (multiplier ?? 10.0) * powerOfTen;
   }
 
-  function cameraDistance(eye) {
-    if (!eye || ![eye.x, eye.y, eye.z].every(Number.isFinite)) {
-      return defaultCameraDistance;
-    }
-    return Math.hypot(eye.x, eye.y, eye.z);
-  }
-
-  function cameraEyeFromRelayout(relayoutData, graphElement) {
-    const camera = relayoutData["scene.camera"];
-    if (camera?.eye && [camera.eye.x, camera.eye.y, camera.eye.z].every(Number.isFinite)) {
-      return camera.eye;
-    }
-    const eventEye = {
-      x: relayoutData["scene.camera.eye.x"],
-      y: relayoutData["scene.camera.eye.y"],
-      z: relayoutData["scene.camera.eye.z"],
+  function sceneAxis(title, range) {
+    return {
+      title: { text: title, font: { size: 13 } },
+      range,
+      tickmode: "linear",
+      tick0: 0,
+      dtick: niceTickStep(range),
+      tickfont: { size: 11 },
+      ticks: "outside",
+      ticklen: 5,
+      tickwidth: 1,
+      showgrid: true,
+      gridcolor: "#c9d9e7",
+      zeroline: true,
+      zerolinecolor: "#9ab4c7",
+      backgroundcolor: "#f8fbff",
     };
-    if ([eventEye.x, eventEye.y, eventEye.z].every(Number.isFinite)) {
-      return eventEye;
-    }
-    const layoutEye = graphElement.layout?.scene?.camera?.eye;
-    if (layoutEye && [layoutEye.x, layoutEye.y, layoutEye.z].every(Number.isFinite)) {
-      return layoutEye;
-    }
-    return defaultCameraEye;
   }
 
-  function markerSizesForZoom(state, zoomScale) {
-    return state.baseMarkerSizes.map((size) => clamp(size * zoomScale, 10, 148));
-  }
+  function createSphereMesh(particle) {
+    const radiusNm = particle.diameter_nm / 2.0;
+    const verticesPerLatitude = sphereLongitudeSegments + 1;
+    const x = [];
+    const y = [];
+    const z = [];
+    const i = [];
+    const j = [];
+    const k = [];
 
-  function updatePreviewForCamera(relayoutData, graphElement) {
-    const cameraChanged = Object.keys(relayoutData).some(
-      (key) => key === "scene.camera" || key.startsWith("scene.camera.eye"),
-    );
-    if (!cameraChanged || !previewState || !window.Plotly) {
-      return;
+    for (let latitude = 0; latitude <= sphereLatitudeSegments; latitude += 1) {
+      const polarAngle = (Math.PI * latitude) / sphereLatitudeSegments;
+      const sinPolarAngle = Math.sin(polarAngle);
+      const cosPolarAngle = Math.cos(polarAngle);
+      for (let longitude = 0; longitude <= sphereLongitudeSegments; longitude += 1) {
+        const azimuthAngle = (2.0 * Math.PI * longitude) / sphereLongitudeSegments;
+        x.push(particle.x_nm + radiusNm * sinPolarAngle * Math.cos(azimuthAngle));
+        y.push(particle.y_nm + radiusNm * sinPolarAngle * Math.sin(azimuthAngle));
+        z.push(particle.z_nm + radiusNm * cosPolarAngle);
+      }
     }
-    const nextDistance = cameraDistance(cameraEyeFromRelayout(relayoutData, graphElement));
-    if (Math.abs(nextDistance - previewState.cameraDistance) < 1e-4) {
-      return;
-    }
-    previewState.cameraDistance = nextDistance;
-    const zoomScale = clamp(defaultCameraDistance / nextDistance, 0.58, 2.35);
-    const markerSizes = markerSizesForZoom(previewState, zoomScale);
-    const labelSize = Math.round(clamp(12 * Math.sqrt(zoomScale), 10, 18));
-    const tickFontSize = Math.round(clamp(10 * Math.sqrt(zoomScale), 9, 15));
-    const axisTitleFontSize = Math.round(clamp(12 * Math.sqrt(zoomScale), 10, 18));
 
-    void window.Plotly.restyle(
-      graphElement,
-      {
-        "marker.size": [markerSizes],
-        "textfont.size": [labelSize],
-      },
-      [0],
-    );
-    void window.Plotly.relayout(graphElement, {
-      "scene.xaxis.tickfont.size": tickFontSize,
-      "scene.yaxis.tickfont.size": tickFontSize,
-      "scene.zaxis.tickfont.size": tickFontSize,
-      "scene.xaxis.title.font.size": axisTitleFontSize,
-      "scene.yaxis.title.font.size": axisTitleFontSize,
-      "scene.zaxis.title.font.size": axisTitleFontSize,
-    });
-  }
-
-  function attachPreviewRelayoutHandler(graphElement) {
-    if (graphElement.__plasmonRelayoutHandler && typeof graphElement.removeListener === "function") {
-      graphElement.removeListener("plotly_relayout", graphElement.__plasmonRelayoutHandler);
+    for (let latitude = 0; latitude < sphereLatitudeSegments; latitude += 1) {
+      for (let longitude = 0; longitude < sphereLongitudeSegments; longitude += 1) {
+        const topLeft = latitude * verticesPerLatitude + longitude;
+        const topRight = topLeft + 1;
+        const bottomLeft = topLeft + verticesPerLatitude;
+        const bottomRight = bottomLeft + 1;
+        i.push(topLeft, topRight);
+        j.push(bottomLeft, bottomRight);
+        k.push(topRight, bottomLeft);
+      }
     }
-    graphElement.__plasmonRelayoutHandler = (relayoutData) => {
-      updatePreviewForCamera(relayoutData, graphElement);
+
+    return {
+      type: "mesh3d",
+      x,
+      y,
+      z,
+      i,
+      j,
+      k,
+      color: sphereFillColor,
+      opacity: 0.93,
+      flatshading: false,
+      lighting: { ambient: 0.58, diffuse: 0.82, specular: 0.28, roughness: 0.75 },
+      lightposition: { x: 100, y: 120, z: 180 },
+      contour: { show: true, color: sphereOutlineColor, width: 1 },
+      hoverinfo: "skip",
+      showscale: false,
     };
-    if (typeof graphElement.on === "function") {
-      graphElement.on("plotly_relayout", graphElement.__plasmonRelayoutHandler);
-    }
+  }
+
+  function labelPosition(particle, viewSpan) {
+    const radiusNm = particle.diameter_nm / 2.0;
+    const clearanceNm = Math.max(radiusNm * 0.22, viewSpan * 0.025, 0.8);
+    const labelDistanceNm = radiusNm + clearanceNm;
+    return {
+      x: particle.x_nm + labelDirection.x * labelDistanceNm,
+      y: particle.y_nm + labelDirection.y * labelDistanceNm,
+      z: particle.z_nm + labelDirection.z * labelDistanceNm,
+    };
   }
 
   function renderPreview() {
@@ -242,7 +248,9 @@ window.PlasmonInputForm = (() => {
       [particle.diameter_nm, particle.x_nm, particle.y_nm, particle.z_nm].every(Number.isFinite),
     );
     if (!window.Plotly || !graphElement || finiteParticles.length === 0) {
-      previewState = null;
+      if (window.Plotly && graphElement) {
+        window.Plotly.purge(graphElement);
+      }
       return;
     }
     const maximumDiameter = Math.max(...finiteParticles.map((particle) => particle.diameter_nm));
@@ -257,83 +265,49 @@ window.PlasmonInputForm = (() => {
       yRange[1] - yRange[0],
       zRange[1] - zRange[0],
     );
-    const baseMarkerSizes = finiteParticles.map((particle) =>
-      clamp((particle.diameter_nm / viewSpan) * 190, 10, 96),
-    );
-    previewState = {
-      baseMarkerSizes,
-      cameraDistance: defaultCameraDistance,
+    const labelPositions = finiteParticles.map((particle) => labelPosition(particle, viewSpan));
+    const sphereTraces = finiteParticles.map((particle) => createSphereMesh(particle));
+    const labelTrace = {
+      type: "scatter3d",
+      mode: "text",
+      x: labelPositions.map((position) => position.x),
+      y: labelPositions.map((position) => position.y),
+      z: labelPositions.map((position) => position.z),
+      text: finiteParticles.map((_, index) => String(index + 1)),
+      customdata: finiteParticles.map((particle) => [
+        particle.diameter_nm,
+        particle.x_nm,
+        particle.y_nm,
+        particle.z_nm,
+      ]),
+      textposition: "middle center",
+      textfont: { color: "#17324d", size: 13 },
+      hovertemplate: t("preview.hover"),
+      hoverlabel: { bgcolor: "#17324d", font: { color: "#ffffff" } },
+      showlegend: false,
     };
 
-    const plotPromise = window.Plotly.react(
+    window.Plotly.react(
       graphElement,
-      [
-        {
-          type: "scatter3d",
-          mode: "markers+text",
-          x: xValues,
-          y: yValues,
-          z: zValues,
-          text: finiteParticles.map((_, index) => ` ${index + 1}`),
-          customdata: finiteParticles.map((particle) => [particle.diameter_nm]),
-          textposition: "top center",
-          textfont: { color: "#17324d", size: 12 },
-          marker: {
-            size: baseMarkerSizes,
-            sizemode: "diameter",
-            sizeref: 1,
-            sizemin: 10,
-            color: "#d69e2e",
-            line: { color: "#6b4200", width: 1.5 },
-            opacity: 0.9,
-          },
-          hovertemplate: t("preview.hover"),
-        },
-      ],
+      [...sphereTraces, labelTrace],
       {
-        margin: { t: 34, r: 32, b: 62, l: 64 },
+        margin: { t: 38, r: 42, b: 72, l: 78 },
         scene: {
-          xaxis: {
-            title: { text: t("preview.xAxis"), font: { size: 12 } },
-            range: xRange,
-            tickfont: { size: 10 },
-            nticks: 5,
-            gridcolor: "#d6e2ef",
-            backgroundcolor: "#f8fbff",
-          },
-          yaxis: {
-            title: { text: t("preview.yAxis"), font: { size: 12 } },
-            range: yRange,
-            tickfont: { size: 10 },
-            nticks: 5,
-            gridcolor: "#d6e2ef",
-            backgroundcolor: "#f8fbff",
-          },
-          zaxis: {
-            title: { text: t("preview.zAxis"), font: { size: 12 } },
-            range: zRange,
-            tickfont: { size: 10 },
-            nticks: 5,
-            gridcolor: "#d6e2ef",
-            backgroundcolor: "#f8fbff",
-          },
+          xaxis: sceneAxis(t("preview.xAxis"), xRange),
+          yaxis: sceneAxis(t("preview.yAxis"), yRange),
+          zaxis: sceneAxis(t("preview.zAxis"), zRange),
           aspectmode: "data",
           dragmode: "orbit",
           camera: {
-            eye: defaultCameraEye,
+            eye: { x: 1.8, y: 1.8, z: 1.45 },
             up: { x: 0, y: 0, z: 1 },
             projection: { type: "perspective" },
           },
         },
         paper_bgcolor: "#ffffff",
       },
-      { responsive: true, displaylogo: false, scrollZoom: true },
+      { responsive: true, displaylogo: false, displayModeBar: true, scrollZoom: true },
     );
-    if (plotPromise && typeof plotPromise.then === "function") {
-      void plotPromise.then(() => attachPreviewRelayoutHandler(graphElement));
-    } else {
-      attachPreviewRelayoutHandler(graphElement);
-    }
   }
 
   function refreshGeometry() {

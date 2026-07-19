@@ -217,30 +217,31 @@
         <div id="error-message" class="error-message" role="alert" hidden></div>
       </section>
 
-      <section class="panel result-panel" aria-labelledby="result-title">
-        <div class="result-heading">
-          <div>
-            <p class="section-kicker" data-i18n="result.kicker">RESULTS</p>
-            <h2 id="result-title" data-i18n="result.title">計算結果</h2>
-            <p data-i18n="result.description">断面積は nm² 表示です。ダウンロードには計算条件とタイムスタンプを付記します。</p>
-          </div>
-          <div class="download-actions">
-            <button id="download-csv" type="button" disabled data-i18n="result.downloadCsv">CSVをダウンロード</button>
-            <button id="download-json" type="button" disabled data-i18n="result.downloadJson">JSONをダウンロード</button>
-          </div>
-        </div>
-
-        <div class="result-content">
-          <aside class="layout-preview-card" aria-labelledby="geometry-preview-title">
-            <div class="preview-heading">
-              <div>
-                <h3 id="geometry-preview-title" data-i18n="preview.title">3D配置プレビュー</h3>
-                <p data-i18n="preview.description">マーカーはカメラ距離に応じて径の相対表示を更新します。正確な径と座標はホバーまたは入力表で確認できます。</p>
-              </div>
+      <div class="analysis-workspace">
+        <section class="panel preview-panel" aria-labelledby="geometry-preview-title">
+          <div class="preview-heading">
+            <div>
+              <p class="section-kicker" data-i18n="preview.kicker">GEOMETRY</p>
+              <h2 id="geometry-preview-title" data-i18n="preview.title">3D配置プレビュー</h2>
+              <p data-i18n="preview.description">粒子径をnm座標系の球として表示します。マウスホイールで拡大・縮小、ドラッグで回転し、モードバーのPanで移動できます。</p>
             </div>
-            <div id="geometry-preview" class="geometry-preview" data-i18n-aria-label="preview.aria" aria-label="粒子配置の3Dプレビュー"></div>
-          </aside>
-          <div class="result-main">
+          </div>
+          <div id="geometry-preview" class="geometry-preview" data-i18n-aria-label="preview.aria" aria-label="粒子配置の3Dプレビュー"></div>
+        </section>
+
+        <section class="panel result-panel" aria-labelledby="result-title">
+          <div class="result-heading">
+            <div>
+              <p class="section-kicker" data-i18n="result.kicker">RESULTS</p>
+              <h2 id="result-title" data-i18n="result.title">計算結果</h2>
+              <p data-i18n="result.description">断面積は nm² 表示です。ダウンロードには計算条件とタイムスタンプを付記します。</p>
+            </div>
+            <div class="download-actions">
+              <button id="download-csv" type="button" disabled data-i18n="result.downloadCsv">CSVをダウンロード</button>
+              <button id="download-json" type="button" disabled data-i18n="result.downloadJson">JSONをダウンロード</button>
+            </div>
+          </div>
+
             <details id="qcm-notice" class="qcm-notice" aria-live="polite" hidden>
               <summary data-i18n="result.qcmSummary">QCM適用結果は傾向探索用の参考値です。BEM/DDA/FDTD/TDDFTとの定量的一致は保証しません。パラメータ状態を表示</summary>
               <dl class="qcm-details">
@@ -255,9 +256,8 @@
             </details>
             <ul id="warning-list" class="warning-list" aria-live="polite"></ul>
             <div id="spectrum-plot" class="spectrum-plot" data-i18n-aria-label="result.spectrumAria" aria-label="CDAスペクトルのグラフ"></div>
-          </div>
-        </div>
-      </section>
+        </section>
+      </div>
     </main>
 
     <footer class="site-footer" data-i18n="footer.note">

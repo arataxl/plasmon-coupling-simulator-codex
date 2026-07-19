@@ -63,11 +63,27 @@ def test_index_translation_attributes_reference_catalogue_keys() -> None:
     assert referenced_keys <= _translation_keys("ja")
 
 
-def test_preview_camera_relayout_updates_marker_and_axis_text_sizes() -> None:
-    """3Dズーム後に固定px表示へ戻らないためのクライアント側フックを残す。"""
+def test_preview_uses_nm_meshes_without_camera_distance_resizing() -> None:
+    """粒子径をデータ座標系の球メッシュで描き、カメラ距離へ依存しない。"""
     input_form = (WEB_ROOT / "js" / "input_form.js").read_text(encoding="utf-8")
 
-    assert '"plotly_relayout"' in input_form
-    assert '"scene.camera.eye"' in input_form
-    assert '"marker.size"' in input_form
-    assert '"scene.xaxis.tickfont.size"' in input_form
+    assert 'type: "mesh3d"' in input_form
+    assert "function createSphereMesh" in input_form
+    assert "const radiusNm = particle.diameter_nm / 2.0;" in input_form
+    assert "const sphereLatitudeSegments = 8;" in input_form
+    assert "const sphereLongitudeSegments = 12;" in input_form
+    assert '"plotly_relayout"' not in input_form
+    assert '"marker.size"' not in input_form
+    assert 'tickmode: "linear"' in input_form
+    assert "dtick: niceTickStep(range)" in input_form
+
+
+def test_preview_uses_a_dedicated_panel_with_minimum_display_area() -> None:
+    """プレビューを結果グラフから分離し、400px以上の表示領域を確保する。"""
+    index = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+    stylesheet = (WEB_ROOT / "css" / "app.css").read_text(encoding="utf-8")
+
+    assert index.index('class="panel preview-panel"') < index.index('class="panel result-panel"')
+    assert ".preview-panel" in stylesheet
+    assert ".geometry-preview" in stylesheet
+    assert "min-height: 28rem;" in stylesheet
