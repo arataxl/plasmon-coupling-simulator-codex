@@ -4,9 +4,10 @@
 量子補正モデル（QCM）で条件探索するための、研究者・学生向けローカルWebアプリです。
 実験データの定量再現器や、BEM/DDA/FDTD/TDDFTの代替を目的にはしません。
 
-> 状態：Phase 2完了。Johnson and Christy材料データ、単一球の完全Mie参照計算、
+> 状態：Phase 2完了、およびQCM距離依存表の補間を実装済みです。Johnson and Christy材料データ、単一球の完全Mie参照計算、
 > FCDA分極率、遅延 Green tensor、CDA中核、入力スキーマ、Validation Test 1〜3・5の
-> 基礎試験は実装済みです。API、UI、QCM、Test 4・6、セットアップ用バッチは未実装です。
+> 基礎試験に加え、Fig. 2d由来の暫定 `gamma_g` 表と補間の基礎試験を実装済みです。API、UI、
+> QCM薄層とCDAの統合、Test 4の残り、Test 6、セットアップ用バッチは未実装です。
 
 ## MVPで目指すこと
 
@@ -93,7 +94,8 @@ run_app.bat
 [docs/validation_plan.md](docs/validation_plan.md) と [docs/SPEC.md](docs/SPEC.md) を正とします。
 
 Phase 2までにTest 1、入力スキーマ、Test 2、Test 3、Test 5の基礎pytestを実装済みです。
-Test 4・6とAPI/SSEの統合試験は後続Phaseで追加します。提出時には、実行環境・依存
+加えて、Test 4のうち、暫定 `gamma_g` 表の再現・範囲外処理・有限値を検証する基礎pytestを実装済みです。
+QCM薄層/CDA統合を含むTest 4の残り、Test 6、API/SSEの統合試験は後続Phaseで追加します。提出時には、実行環境・依存
 バージョン・pass実績を記録します。
 
 ## 開発におけるAI利用記録（Build Week提出用）

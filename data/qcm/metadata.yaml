@@ -1,0 +1,37 @@
+# data/qcm/gamma_g_au_digitized.csv
+
+parameter_status: provisional_digitized
+material_model: "Au jellium"
+parameter: "gamma_g"
+source:
+  authors: "Esteban, R.; Borisov, A. G.; Nordlander, P.; Aizpurua, J."
+  title: "Bridging quantum and classical plasmonics with a quantum-corrected model"
+  journal: "Nature Communications"
+  volume: 3
+  article: 825
+  year: 2012
+  doi: "10.1038/ncomms1806"
+  source_pdf_url: "https://digital.csic.es/bitstream/10261/90078/1/Bridging%20quantum.pdf"
+  source_access_date: "not recorded with the supplied digitization"
+  figure: "Fig. 2d"
+  curve: "Au jellium, blue solid line"
+digitization:
+  tool: "WebPlotDigitizer"
+  method: "manual"
+  digitization_date: "not provided"
+  calibration_points_status: "not provided with the digitized data"
+  reading_uncertainty_relative: "approximately 5-10%"
+  interpolation: "shape-preserving PCHIP of log(gamma_g) versus separation"
+units:
+  separation: angstrom
+  gamma_g: electron_volt
+point_count: 22
+separation_range_angstrom: [0.011, 5.439]
+out_of_range_policy:
+  below_minimum: "explicit error; no extrapolation"
+  above_maximum: "classical_limit_no_tunnelling; no extrapolation"
+caution: >
+  This is a manually digitized provisional reference table, not an author-provided
+  numerical table or fit. Values outside the recorded separation range must not be
+  interpreted as digitized values. The missing calibration-point record must be
+  retained in future result metadata and resolved before final QCM acceptance.

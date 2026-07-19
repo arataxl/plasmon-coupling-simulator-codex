@@ -1,4 +1,4 @@
-# リポジトリ構成・技術選定（MVP実装前設計）
+# リポジトリ構成・技術選定
 
 ## 位置付け
 
@@ -37,7 +37,7 @@ Phase 2では `src/physics/polarizability.py`、`src/physics/green_tensor.py`、
 │   │   ├── polarizability.py          # FCDA分極率、Kreibig切替
 │   │   ├── green_tensor.py            # 遅延を含むdyadic Green tensor
 │   │   ├── cda_solver.py              # 多粒子CDA複素線形方程式
-│   │   └── qcm.py                     # QCM薄層化、補間済みパラメータの物理計算
+│   │   └── qcm.py                     # QCM距離依存表の補間（薄層化・CDA統合は後続）
 │   ├── io/
 │   │   ├── unit_conversion.py         # UI/APIのnm等と内部SI単位の境界
 │   │   ├── qcm_parameter_table.py     # 暫定デジタイズ表の読込・完全性検査
@@ -60,8 +60,8 @@ Phase 2では `src/physics/polarizability.py`、`src/physics/green_tensor.py`、
 │   │   ├── au_johnson_christy_1972.csv
 │   │   └── metadata.yaml
 │   └── qcm/
-│       └── esteban_2012_fig2d_au_digitized.json
-│                                      # 実装前には作成しない、版管理する暫定表
+│       ├── gamma_g_au_digitized.csv   # Fig. 2dのAu実線を読取った暫定表
+│       └── metadata.yaml              # 出典・単位・読取誤差・有効範囲
 ├── tests/
 │   ├── conftest.py
 │   ├── fixtures/
@@ -70,6 +70,7 @@ Phase 2では `src/physics/polarizability.py`、`src/physics/green_tensor.py`、
 │   ├── test_mie_reference.py           # Validation Test 1
 │   ├── test_cda_isolated_limit.py      # Validation Test 2
 │   ├── test_dimer_coupling.py          # Validation Test 3
+│   ├── test_qcm.py                     # Validation Test 4の基礎（表・補間）
 │   ├── test_qcm_safety.py              # Validation Test 4
 │   ├── test_multiparticle_stability.py # Validation Test 5
 │   ├── test_io_reproducibility.py      # Validation Test 6
@@ -84,8 +85,9 @@ Phase 2では `src/physics/polarizability.py`、`src/physics/green_tensor.py`、
     └── repository_structure.md
 ```
 
-Phase 2以外の `src/` モジュール、`web/`、`data/qcm/`、Test 4・6はこの構成案の
-後続実装対象である。CSV/JSONはブラウザへのダウンロードとして返し、計算結果を
+Phase 1・2の物理コアに加え、`data/qcm/` とQCM距離依存表の補間、Test 4の基礎試験は
+実装済みである。`web/`、API、QCM薄層とCDAの統合、Test 4の残り、Test 6は後続実装対象とする。
+CSV/JSONはブラウザへのダウンロードとして返し、計算結果を
 サーバー上の実行ディレクトリへ残さない。この方針により、取消時に部分データを
 保存しないというMVP要件を満たしやすくする。
 
@@ -115,17 +117,17 @@ web (静的UI)
 
 | 場所 | 責務 | `provisional_digitized` の扱い |
 | --- | --- | --- |
-| `data/qcm/esteban_2012_fig2d_au_digitized.json` | Fig. 2dのAu青色実線から抽出した表と、校正・読取誤差・補間方法を版管理する。 | `qcm_parameter_source`、`qcm_parameter_status`、`qcm_figure`、`qcm_curve`、`qcm_calibration_points`、`qcm_reading_uncertainty`、`qcm_interpolation`、表の有効範囲を必須フィールドにする。数値を作成するのは抽出手順を完了した後だけとする。 |
+| `data/qcm/gamma_g_au_digitized.csv` と `data/qcm/metadata.yaml` | Fig. 2dのAu青色実線から抽出した22点と、出典・曲線・単位・読取誤差・有効範囲を版管理する。 | `parameter_status: provisional_digitized` と、校正点記録が未提供であることを保持する。数値を文献の係数表や検証済み値として扱わない。 |
 | `src/schemas/qcm.py` | 表と出典情報を型付きで検証する。 | 必須フィールドが欠ける、または `qcm_parameter_status` が `provisional_digitized` 以外の場合は、MVPの暫定表として読込を拒否する。 |
-| `src/io/qcm_parameter_table.py` | JSON表を読み、表の範囲外参照を防ぐ。 | 外挿を許可しない。読込時の出典情報を削らず `QcmMetadata` へ渡す。 |
-| `src/physics/qcm.py` | 表から補間した値で4層のQCM薄層を構成する。 | 値だけを受け取り、出典を独自に置換・再フィットしない。Naの補足資料値や独自の指数関数を使わない。 |
+| `src/io/qcm_parameter_table.py` | CSV表を読み、列・数値・単調性を検証する。 | 表を読み込むだけで、出典メタデータを再解釈・改変しない。範囲判定は物理層に委譲する。 |
+| `src/physics/qcm.py` | 表から `log(gamma_g)` をPCHIP補間し、範囲外を安全に扱う。 | 下限未満はエラー、上限超過は外挿せず古典極限とする。4層QCM薄層とCDA統合は後続であり、Naの補足資料値や独自の指数関数を使わない。 |
 | `src/schemas/result.py` | 計算結果の `qcm_applied` と `QcmMetadata` を保持する。 | `qcm_applied=true` の結果では、`qcm_parameter_status` と出典・校正点・読取誤差・補間法をJSON出力の必須項目にする。非適用時は適用しなかったことを明示し、暫定表の値を出力しない。 |
 | `src/io/exporters.py` | CSV/JSONを出力する。 | CSVはスペクトル列、JSONは完全な `QcmMetadata` を保持する。取消・失敗時はどちらも出力しない。 |
 | `src/api/` と `web/js/results.js` | API応答とUI注記を表示する。 | JSONの状態をそのまま伝え、0.5〜1 nm未満のQCM結果を「暫定デジタイズ値による参考値」と表示する。 |
 
 QCM表の抽出手順、校正点、読取誤差の定義は
-`docs/quantum_corrected_model_integration.md` を正とする。この構成案は数値そのものを
-追加せず、表を正当化するものでもない。
+`docs/quantum_corrected_model_integration.md` を正とする。実装済みの表は利用者提供の
+手動デジタイズ値であり、校正点が未提供という限界を取り除くものではない。
 
 ## 技術選定
 
