@@ -95,6 +95,19 @@ window.PlasmonResults = (() => {
     return `${formatFileNumber(Math.min(...numericValues))}-${formatFileNumber(Math.max(...numericValues))}`;
   }
 
+  function placementFileToken(particles, placement) {
+    const coordinateToken = (particle) =>
+      `x${formatFileNumber(particle.x_nm)}y${formatFileNumber(particle.y_nm)}z${formatFileNumber(particle.z_nm)}`;
+    if (particles.length <= 3) {
+      return `pos-${particles.map(coordinateToken).join("_")}-h${placement.fingerprint}`;
+    }
+    const bounds = ["x_nm", "y_nm", "z_nm"].map((axis) => {
+      const values = particles.map((particle) => particle[axis]);
+      return `${axis.slice(0, 1)}${formatFileNumber(Math.min(...values))}-${formatFileNumber(Math.max(...values))}`;
+    });
+    return `bbox-${bounds.join("_")}-h${placement.fingerprint}`;
+  }
+
   function buildDownloadMetadata(result) {
     const timestampUtc = new Date().toISOString();
     const particles = result.input.particles;
@@ -130,7 +143,7 @@ window.PlasmonResults = (() => {
       "plasmon",
       `n${conditions.particle_count}`,
       `d${diameterSummary(particles)}nm`,
-      `layout-${placement.type}-h${placement.fingerprint}`,
+      `layout-${placement.type}-${placementFileToken(particles, placement)}`,
       `gap${minimumGapNm === null ? "na" : formatFileNumber(minimumGapNm)}nm`,
       `wl${formatFileNumber(spectrum.start_wavelength_nm)}-${formatFileNumber(spectrum.end_wavelength_nm)}s${formatFileNumber(spectrum.step_nm)}nm`,
       `qcm-${qcmApplied ? "on" : "off"}`,
