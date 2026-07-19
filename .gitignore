@@ -1,0 +1,9 @@
+# Measurement data
+*.txt
+*.jws
+data/measurements/
+
+# Python environments and bytecode caches
+.venv/
+**/__pycache__/
+*.pyc
