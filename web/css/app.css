@@ -315,6 +315,20 @@ summary:focus-visible,
   grid-column: 1 / -1;
 }
 
+.preset-error {
+  grid-column: 1 / -1;
+  min-height: 1.3rem;
+  margin: -0.15rem 0 0;
+  color: #9a2118;
+  font-size: 0.8rem;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.preset-error[hidden] {
+  display: none;
+}
+
 .label-with-tooltip {
   display: inline-flex;
   align-items: center;

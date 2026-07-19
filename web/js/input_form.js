@@ -6,16 +6,26 @@ window.PlasmonInputForm = (() => {
   const sphereLatitudeSegments = 16;
   const sphereLongitudeSegments = 16;
   const spherePalette = Object.freeze([
-    "#d69e2e",
-    "#b7791f",
-    "#e0b44d",
-    "#9c6428",
-    "#c88932",
-    "#edca63",
-    "#805b31",
-    "#d3a150",
-    "#a77437",
-    "#e4b777",
+    "#d6a329",
+    "#db712a",
+    "#bb5139",
+    "#b04d5f",
+    "#90559a",
+    "#526cae",
+    "#357fa3",
+    "#2f8d87",
+    "#4e9567",
+    "#879b37",
+    "#b3a638",
+    "#c48a2d",
+    "#d16654",
+    "#9b527e",
+    "#3e94a0",
+    "#39746d",
+    "#536f91",
+    "#826238",
+    "#a46d31",
+    "#687784",
   ]);
   const sphereOutlineColor = "#4f3414";
   const labelDirection = Object.freeze({ x: 0.3, y: 0.3, z: 0.9055385138 });
@@ -292,9 +302,27 @@ window.PlasmonInputForm = (() => {
     const { xRange, yRange, zRange, viewSpanNm } = equalAxisRanges(finiteParticles);
     const labelPositions = finiteParticles.map((particle) => labelPosition(particle, viewSpanNm));
     const sphereTraces = finiteParticles.map((particle, index) => createSphereMesh(particle, index));
+    // Plotly の 3D テキストにはアウトライン属性がないため、少し大きな暗色テキストを
+    // 背面に重ねて、背景ボックスなしの読みやすい縁取りとして扱う。
+    const labelOutlineTrace = {
+      type: "scatter3d",
+      mode: "text",
+      x: labelPositions.map((position) => position.x),
+      y: labelPositions.map((position) => position.y),
+      z: labelPositions.map((position) => position.z),
+      text: finiteParticles.map((_, index) => String(index + 1)),
+      textposition: "middle center",
+      textfont: {
+        color: "#071521",
+        family: '"Segoe UI Black", "Arial Black", "Noto Sans JP", sans-serif',
+        size: 21,
+      },
+      hoverinfo: "skip",
+      showlegend: false,
+    };
     const labelTrace = {
       type: "scatter3d",
-      mode: "markers+text",
+      mode: "text",
       x: labelPositions.map((position) => position.x),
       y: labelPositions.map((position) => position.y),
       z: labelPositions.map((position) => position.z),
@@ -307,16 +335,9 @@ window.PlasmonInputForm = (() => {
       ]),
       textposition: "middle center",
       textfont: {
-        color: "#102a43",
-        family: '"Segoe UI Semibold", "Noto Sans JP", sans-serif',
-        size: 17,
-      },
-      marker: {
-        color: "rgba(255, 255, 255, 0.94)",
-        line: { color: "#173f5f", width: 2 },
-        opacity: 0.96,
-        size: 24,
-        symbol: "square",
+        color: "#fffdf5",
+        family: '"Segoe UI Black", "Arial Black", "Noto Sans JP", sans-serif',
+        size: 16,
       },
       hovertemplate: t("preview.hover"),
       hoverlabel: { bgcolor: "#17324d", font: { color: "#ffffff" } },
@@ -325,7 +346,7 @@ window.PlasmonInputForm = (() => {
 
     window.Plotly.react(
       graphElement,
-      [...sphereTraces, labelTrace],
+      [...sphereTraces, labelOutlineTrace, labelTrace],
       {
         margin: { t: 38, r: 42, b: 72, l: 78 },
         scene: {
@@ -410,10 +431,16 @@ window.PlasmonInputForm = (() => {
     renderParticleRows();
   }
 
-  function showPresetError(error) {
-    const target = document.getElementById("geometry-validation");
+  function clearPresetError(preset) {
+    const target = document.getElementById(`${preset}-preset-error`);
+    target.textContent = "";
+    target.hidden = true;
+  }
+
+  function showPresetError(preset, error) {
+    const target = document.getElementById(`${preset}-preset-error`);
     target.textContent = error.message;
-    target.classList.add("has-error");
+    target.hidden = false;
   }
 
   async function normalizePresetParticles(nextParticles) {
@@ -423,6 +450,7 @@ window.PlasmonInputForm = (() => {
 
   async function applyDimer() {
     const button = document.getElementById("apply-dimer");
+    clearPresetError("dimer");
     button.disabled = true;
     try {
       const diameterNm = numberValue("dimer-diameter-nm");
@@ -438,6 +466,7 @@ window.PlasmonInputForm = (() => {
 
   async function applyTrimer() {
     const button = document.getElementById("apply-trimer");
+    clearPresetError("trimer");
     button.disabled = true;
     try {
       const diameterNm = numberValue("trimer-diameter-nm");
@@ -455,6 +484,7 @@ window.PlasmonInputForm = (() => {
 
   async function applyRandomCluster() {
     const button = document.getElementById("apply-random-cluster");
+    clearPresetError("random");
     button.disabled = true;
     try {
       const minimumSurfaceGapNm = numberValue("random-minimum-gap-nm");
@@ -560,13 +590,13 @@ window.PlasmonInputForm = (() => {
   function initialize() {
     document.getElementById("medium-preset").addEventListener("change", updateMediumInput);
     document.getElementById("apply-dimer").addEventListener("click", () => {
-      applyDimer().catch(showPresetError);
+      applyDimer().catch((error) => showPresetError("dimer", error));
     });
     document.getElementById("apply-trimer").addEventListener("click", () => {
-      applyTrimer().catch(showPresetError);
+      applyTrimer().catch((error) => showPresetError("trimer", error));
     });
     document.getElementById("apply-random-cluster").addEventListener("click", () => {
-      applyRandomCluster().catch(showPresetError);
+      applyRandomCluster().catch((error) => showPresetError("random", error));
     });
     document.getElementById("random-minimum-gap-nm").addEventListener("input", () => {
       const minimumSurfaceGapNm = numberValue("random-minimum-gap-nm");
@@ -586,7 +616,7 @@ window.PlasmonInputForm = (() => {
     document.getElementById("random-maximum-gap-nm").min = String(
       numberValue("random-minimum-gap-nm"),
     );
-    applyDimer().catch(showPresetError);
+    applyDimer().catch((error) => showPresetError("dimer", error));
   }
 
   return { buildPayload, initialize, refreshGeometry };

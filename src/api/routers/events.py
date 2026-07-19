@@ -41,7 +41,10 @@ async def stream_simulation_progress(
     try:
         job_manager.assert_job_exists(job_id)
     except SimulationJobNotFoundError as error:
-        raise HTTPException(status_code=404, detail="simulation job was not found") from error
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "simulation_job_not_found"},
+        ) from error
 
     async def event_stream() -> AsyncIterator[str]:
         async for event in job_manager.events_for(job_id):

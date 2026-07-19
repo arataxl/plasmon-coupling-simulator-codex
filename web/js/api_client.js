@@ -1,13 +1,37 @@
 window.PlasmonApi = (() => {
+  const errorMessageKeyByCode = Object.freeze({
+    invalid_input: "api.invalidInput",
+    simulation_failed: "api.simulateFailed",
+    qcm_metadata_unavailable: "api.qcmMetadataUnavailable",
+    material_data_unavailable: "api.materialDataUnavailable",
+    qcm_parameter_table_unavailable: "api.qcmParameterTableUnavailable",
+    random_cluster_generation_failed: "api.randomClusterUnavailable",
+    preset_layout_invalid: "api.presetLayoutInvalid",
+    simulation_job_not_found: "api.jobNotFound",
+  });
+
   function t(key, parameters) {
     return window.PlasmonI18n.t(key, parameters);
   }
 
+  function messageForErrorCode(errorCode, fallbackMessage) {
+    const translationKey = errorMessageKeyByCode[errorCode];
+    return translationKey ? t(translationKey) : fallbackMessage;
+  }
+
   async function parseResponse(response, fallbackMessage) {
-    const body = await response.json();
+    let body;
+    try {
+      body = await response.json();
+    } catch {
+      if (!response.ok) {
+        throw new Error(fallbackMessage);
+      }
+      return {};
+    }
     if (!response.ok) {
-      const message = body.error?.message ?? body.detail ?? fallbackMessage;
-      throw new Error(message);
+      const errorCode = body.error?.code ?? body.detail?.code;
+      throw new Error(messageForErrorCode(errorCode, fallbackMessage));
     }
     return body;
   }
@@ -60,6 +84,7 @@ window.PlasmonApi = (() => {
     startSimulationJob,
     cancelSimulationJob,
     generateRandomCluster,
+    messageForErrorCode,
     roundLayoutForDisplay,
   };
 })();

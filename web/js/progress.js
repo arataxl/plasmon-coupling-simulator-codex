@@ -50,7 +50,11 @@ window.PlasmonProgress = (() => {
       const data = JSON.parse(event.data);
       activeJob.terminal = true;
       closeActiveJob(jobId);
-      handlers.onError(new Error(data.message));
+      handlers.onError(
+        new Error(
+          window.PlasmonApi.messageForErrorCode(data.code, t("progress.failed")),
+        ),
+      );
     });
     source.onerror = () => {
       if (!activeJob || activeJob.jobId !== jobId || activeJob.terminal) {

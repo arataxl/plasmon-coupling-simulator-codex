@@ -33,6 +33,7 @@ def test_japanese_and_english_translation_catalogues_have_matching_keys() -> Non
         "actions.calculate",
         "actions.cancel",
         "preset.maximumSurfaceGap",
+        "api.randomClusterUnavailable",
     } <= japanese_keys
 
 
@@ -76,7 +77,11 @@ def test_preview_uses_nm_meshes_without_camera_distance_resizing() -> None:
     assert "const spherePalette = Object.freeze" in input_form
     assert 'opacity: 1' in input_form
     assert 'aspectmode: "cube"' in input_form
-    assert 'symbol: "square"' in input_form
+    assert "const labelOutlineTrace" in input_form
+    assert 'mode: "markers+text"' not in input_form
+    assert 'symbol: "square"' not in input_form
+    assert 'marker: {' not in input_form
+    assert "labelOutlineTrace, labelTrace" in input_form
     assert '"plotly_relayout"' not in input_form
     assert '"marker.size"' not in input_form
     assert 'tickmode: "linear"' in input_form
@@ -93,6 +98,29 @@ def test_random_cluster_form_and_request_include_a_maximum_surface_gap() -> None
     assert 'data-i18n="preset.randomGapHelp"' in index
     assert 'maximum_surface_gap_nm: maximumSurfaceGapNm' in input_form
     assert 't("validation.randomGapRange")' in input_form
+
+
+def test_preset_errors_are_rendered_directly_below_their_own_actions() -> None:
+    """各プリセットの失敗は、座標表ではなく実行ボタン直下で通知する。"""
+    index = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+    input_form = (WEB_ROOT / "js" / "input_form.js").read_text(encoding="utf-8")
+
+    for preset in ("dimer", "trimer", "random"):
+        action_id = "apply-random-cluster" if preset == "random" else f"apply-{preset}"
+        error_id = f'{preset}-preset-error'
+        assert index.index(f'id="{action_id}"') < index.index(f'id="{error_id}"')
+        assert f'showPresetError("{preset}", error)' in input_form
+
+
+def test_client_uses_i18n_messages_for_structured_backend_errors() -> None:
+    """API/SSEの内部例外文を画面にそのまま出さず、現在の言語で表示する。"""
+    api_client = (WEB_ROOT / "js" / "api_client.js").read_text(encoding="utf-8")
+    progress = (WEB_ROOT / "js" / "progress.js").read_text(encoding="utf-8")
+
+    assert 'random_cluster_generation_failed: "api.randomClusterUnavailable"' in api_client
+    assert 'preset_layout_invalid: "api.presetLayoutInvalid"' in api_client
+    assert "body.error?.message" not in api_client
+    assert "data.message" not in progress
 
 
 def test_preview_uses_a_dedicated_panel_with_minimum_display_area() -> None:

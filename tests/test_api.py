@@ -11,7 +11,9 @@ from typing import Any
 import pytest
 
 from src.main import app
+from src.services.particle_layouts import ParticleLayoutError
 from src.services.simulation_service import QcmMetadataUnavailableError
+import src.api.routers.simulations as simulations_router
 import src.services.simulation_service as simulation_service
 
 
@@ -220,6 +222,41 @@ def test_random_cluster_layout_rejects_a_reversed_surface_gap_range() -> None:
     assert status_code == 422
     assert response["error"]["code"] == "invalid_input"
     assert "maximum_surface_gap_nm" in json.dumps(response["error"]["details"])
+
+
+def test_random_cluster_layout_does_not_expose_internal_generation_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ランダム配置の内部例外は、UIが翻訳できるコードだけで返す。"""
+
+    def raise_layout_error(*_: object, **__: object) -> object:
+        raise ParticleLayoutError("could not generate a non-overlapping random configuration")
+
+    monkeypatch.setattr(
+        simulations_router,
+        "generate_random_nonoverlapping_configuration",
+        raise_layout_error,
+    )
+    payload = {
+        "particle_count": 5,
+        "mean_diameter_nm": 20.0,
+        "minimum_surface_gap_nm": 5.0,
+        "maximum_surface_gap_nm": 250.0,
+        "seed": 20260720,
+    }
+
+    status_code, response = _post_json("/layouts/random-cluster", payload)
+
+    assert status_code == 422
+    assert response == {"detail": {"code": "random_cluster_generation_failed"}}
+
+
+def test_unknown_simulation_job_uses_a_structured_error_code() -> None:
+    """取消APIも英語の内部例外文を直接返さない。"""
+    status_code, response = _post_json("/simulate/jobs/unknown-job/cancel", {})
+
+    assert status_code == 404
+    assert response == {"detail": {"code": "simulation_job_not_found"}}
 
 
 def test_random_cluster_layout_can_generate_a_qcm_range_without_crossing_bounds() -> None:
