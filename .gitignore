@@ -3,6 +3,9 @@
 *.jws
 data/measurements/
 
+# Local PDF copy; the tracked Markdown file retains the bibliographic record.
+docs/Faraday_Discussion_178_151-183_2015.pdf
+
 # Dependency manifests are source-controlled despite the measurement-data rule.
 !requirements.txt
 !requirements-dev.txt
