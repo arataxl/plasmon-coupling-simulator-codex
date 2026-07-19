@@ -10,6 +10,11 @@
 粒子間のコヒーレント干渉を含む。これは Draine & Flatau, *JOSA A* 11,
 1491--1499 (1994), DOI: 10.1364/JOSAA.11.001491 の DDA 断面積の SI 表現に
 対応する。
+
+表面間ギャップが0.5--1 nmの粒子対では、Esteban et al. (2012)のQCM局所誘電率を
+4層の環状ギャップ体積へ離散化し、その和を補助双極子として同じ連立方程式へ加える。
+これは原論文のBEM/FEMシェル解法を単一双極子CDAへ縮約したMVP近似であり、詳細な
+式と限界は ``docs/quantum_corrected_model_integration.md`` を正とする。
 """
 
 from __future__ import annotations
@@ -21,6 +26,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy import linalg
+from scipy.constants import c as SPEED_OF_LIGHT_M_PER_S
 from scipy.constants import epsilon_0 as VACUUM_PERMITTIVITY_F_PER_M
 
 from src.physics.green_tensor import (
@@ -32,6 +38,15 @@ from src.physics.polarizability import (
     FcdaPolarizability,
     KreibigParameters,
     calculate_fcda_polarizability,
+)
+from src.physics.qcm import (
+    AU_JELLIUM_QCM_BULK_DAMPING_ENERGY_EV,
+    AU_JELLIUM_QCM_PLASMA_ENERGY_EV,
+    DEFAULT_QCM_LAYER_COUNT,
+    GammaGParameterTable,
+    QcmBridge,
+    QcmParameterError,
+    build_qcm_bridge_for_sphere_pair,
 )
 
 
@@ -54,7 +69,11 @@ class CdaConfigurationError(ValueError):
 
 
 class CdaQcmRequiredError(CdaConfigurationError):
-    """0.5 nm 以上 1.0 nm 未満のため QCM が必要であることを示す。"""
+    """後方互換用の例外。Phase 3以降の ``solve_cda`` は送出しない。"""
+
+
+class CdaQcmParameterTableRequiredError(CdaConfigurationError):
+    """QCM必須ギャップなのに、版管理済み表が呼出し側から渡されない。"""
 
 
 class CdaIllConditionedMatrixError(CdaError):
@@ -63,6 +82,15 @@ class CdaIllConditionedMatrixError(CdaError):
 
 class CdaLinearSolveError(CdaError):
     """CDA 相互作用行列が特異、または数値解が検証を満たさないことを示す。"""
+
+
+@dataclass(frozen=True)
+class _QcmPairGeometry:
+    """QCMを自動適用する近接粒子対の内部幾何情報。"""
+
+    left_index: int
+    right_index: int
+    surface_gap_m: float
 
 
 @dataclass(frozen=True)
@@ -79,9 +107,20 @@ class CdaSolution:
     incident_electric_fields_v_m: ComplexArray
     induced_dipoles_c_m: ComplexArray
     polarizabilities_si: ComplexArray
+    interaction_positions_m: FloatArray
+    interaction_incident_electric_fields_v_m: ComplexArray
+    interaction_induced_dipoles_c_m: ComplexArray
+    interaction_polarizabilities_si: ComplexArray
     condition_number: float
     relative_residual: float
     warnings: tuple[str, ...]
+    qcm_applied: bool
+    qcm_layer_count: int | None
+    qcm_plasma_energy_ev: float | None
+    qcm_bulk_damping_energy_ev: float | None
+    qcm_bridge_count: int
+    qcm_classical_limit_pair_count: int
+    qcm_max_relative_permittivity_contrast: float | None
 
 
 @dataclass(frozen=True)
@@ -103,6 +142,11 @@ class CdaSpectrum:
     c_abs_m2: FloatArray
     condition_numbers: FloatArray
     warnings: tuple[str, ...]
+    qcm_applied: bool
+    qcm_plasma_energy_ev: float | None
+    qcm_bulk_damping_energy_ev: float | None
+    qcm_bridge_count: int
+    qcm_classical_limit_pair_count: int
 
 
 def _require_finite_positive(value: float, *, name: str) -> float:
@@ -154,9 +198,10 @@ def _gap_tolerance_m(center_distance_m: float, diameters_m: FloatArray) -> float
 
 def _validate_surface_gaps(
     *, positions_m: FloatArray, diameters_m: FloatArray
-) -> tuple[str, ...]:
-    """重なり・QCM領域を拒否し、1--5 nm の CDA 警告を返す。"""
+) -> tuple[tuple[str, ...], tuple[_QcmPairGeometry, ...]]:
+    """重なりを拒否し、QCM対象対と1--5 nmのCDA警告を返す。"""
     minimum_warning_gap_m: float | None = None
+    qcm_pairs: list[_QcmPairGeometry] = []
     for left_index in range(len(positions_m)):
         for right_index in range(left_index + 1, len(positions_m)):
             center_distance_m = float(
@@ -176,9 +221,12 @@ def _validate_surface_gaps(
                     "is below the 0.5 nm model limit"
                 )
             if surface_gap_m < QCM_REQUIRED_BELOW_GAP_M - tolerance_m:
-                raise CdaQcmRequiredError(
-                    f"surface gap between particles {left_index} and {right_index} "
-                    "requires QCM; QCM is not part of the Phase 2 solver"
+                qcm_pairs.append(
+                    _QcmPairGeometry(
+                        left_index=left_index,
+                        right_index=right_index,
+                        surface_gap_m=surface_gap_m,
+                    )
                 )
             if surface_gap_m <= CDA_WARNING_UP_TO_GAP_M + tolerance_m:
                 if (
@@ -188,11 +236,14 @@ def _validate_surface_gaps(
                     minimum_warning_gap_m = surface_gap_m
 
     if minimum_warning_gap_m is None:
-        return ()
+        return (), tuple(qcm_pairs)
     return (
-        "CDA approximation warning: at least one surface gap is within the "
-        "1--5 nm warning range "
-        f"(minimum {minimum_warning_gap_m / 1e-9:.6g} nm).",
+        (
+            "CDA approximation warning: at least one surface gap is within the "
+            "1--5 nm warning range "
+            f"(minimum {minimum_warning_gap_m / 1e-9:.6g} nm).",
+        ),
+        tuple(qcm_pairs),
     )
 
 
@@ -207,6 +258,114 @@ def _incident_electric_fields(
     phases = np.exp(1j * wave_number_m_inv * (positions_m @ propagation_direction))
     field_vector = incident_field_amplitude_v_m * polarization
     return np.asarray(phases[:, np.newaxis] * field_vector[np.newaxis, :], dtype=np.complex128)
+
+
+def _build_qcm_auxiliary_dipoles(
+    *,
+    positions_m: FloatArray,
+    diameters_m: FloatArray,
+    qcm_pairs: tuple[_QcmPairGeometry, ...],
+    wavelength_m: float,
+    medium_relative_permittivity: float,
+    qcm_parameter_table: GammaGParameterTable | None,
+    apply_qcm: bool | None,
+    qcm_layer_count: int,
+) -> tuple[
+    FloatArray,
+    ComplexArray,
+    bool,
+    int,
+    int,
+    float | None,
+    tuple[str, ...],
+]:
+    """QCM対象対の環状層を、CDA連立方程式に加える補助双極子へ変換する。
+
+    ``apply_qcm=False`` はValidation Test 4で古典CDAとの比較を行うためだけの
+    内部フックであり、将来のAPI/UI入力として公開してはならない。既定の ``None`` は
+    幾何に従う自動適用を意味する。
+    """
+    empty_positions = np.empty((0, 3), dtype=np.float64)
+    empty_polarizabilities = np.empty((0,), dtype=np.complex128)
+    if not qcm_pairs:
+        return empty_positions, empty_polarizabilities, False, 0, 0, None, ()
+    if apply_qcm is False:
+        return (
+            empty_positions,
+            empty_polarizabilities,
+            False,
+            0,
+            0,
+            None,
+            (
+                "QCM was disabled by the validation-only solver override for a "
+                "0.5--1 nm surface gap.",
+            ),
+        )
+    if qcm_parameter_table is None:
+        raise CdaQcmParameterTableRequiredError(
+            "QCM parameter_table is required for a 0.5--1 nm surface gap; "
+            "load the versioned table in src.io and pass it to solve_cda"
+        )
+
+    angular_frequency_rad_s = 2.0 * math.pi * SPEED_OF_LIGHT_M_PER_S / wavelength_m
+    bridge_positions: list[FloatArray] = []
+    bridge_polarizabilities: list[complex] = []
+    classical_limit_pair_count = 0
+    maximum_contrast = 0.0
+    for pair in qcm_pairs:
+        try:
+            bridge: QcmBridge = build_qcm_bridge_for_sphere_pair(
+                left_position_m=positions_m[pair.left_index],
+                right_position_m=positions_m[pair.right_index],
+                left_radius_m=float(diameters_m[pair.left_index] / 2.0),
+                right_radius_m=float(diameters_m[pair.right_index] / 2.0),
+                angular_frequency_rad_s=angular_frequency_rad_s,
+                medium_relative_permittivity=medium_relative_permittivity,
+                parameter_table=qcm_parameter_table,
+                layer_count=qcm_layer_count,
+            )
+        except QcmParameterError as error:
+            raise CdaConfigurationError(
+                "QCM bridge construction failed for particles "
+                f"{pair.left_index} and {pair.right_index}"
+            ) from error
+        if bridge.classical_limit:
+            classical_limit_pair_count += 1
+            continue
+        bridge_positions.append(bridge.position_m)
+        bridge_polarizabilities.append(bridge.polarizability_si)
+        maximum_contrast = max(
+            maximum_contrast,
+            bridge.max_relative_permittivity_contrast,
+        )
+
+    if not bridge_positions:
+        return (
+            empty_positions,
+            empty_polarizabilities,
+            True,
+            0,
+            classical_limit_pair_count,
+            0.0,
+            (
+                "QCM was automatically selected, but every close pair is above the "
+                "digitized gamma_g range and therefore uses the classical limit.",
+            ),
+        )
+    return (
+        np.asarray(bridge_positions, dtype=np.float64),
+        np.asarray(bridge_polarizabilities, dtype=np.complex128),
+        True,
+        len(bridge_positions),
+        classical_limit_pair_count,
+        maximum_contrast,
+        (
+            "QCM applied with "
+            f"{qcm_layer_count} concentric-shell quadrature layers and "
+            f"{len(bridge_positions)} auxiliary bridge dipole(s).",
+        ),
+    )
 
 
 def _build_interaction_matrix(
@@ -250,12 +409,20 @@ def solve_cda(
     apply_kreibig_correction: bool = False,
     kreibig_parameters: KreibigParameters | None = None,
     max_condition_number: float = DEFAULT_MAX_CONDITION_NUMBER,
+    qcm_parameter_table: GammaGParameterTable | None = None,
+    apply_qcm: bool | None = None,
+    qcm_layer_count: int = DEFAULT_QCM_LAYER_COUNT,
 ) -> CdaSolution:
     """一波長の FCDA-CDA 連立方程式を解く。
 
-    最大20粒子、すなわち最大60複素自由度を対象に ``scipy.linalg.solve`` を
-    用いる。行列の2ノルム条件数が ``max_condition_number`` を超える、特異、
-    または残差が丸め誤差の見積りを超える場合は、非物理的な結果を返さず例外にする。
+    最大20物理粒子、すなわち最大60複素自由度を対象に ``scipy.linalg.solve`` を
+    用いる。QCMでは近接粒子対ごとに補助双極子の3自由度が加わる。行列の2ノルム
+    条件数が ``max_condition_number`` を超える、特異、または残差が丸め誤差の見積りを
+    超える場合は、非物理的な結果を返さず例外にする。
+
+    ``qcm_parameter_table`` はファイルを知らない物理層へ呼出し側が注入する。0.5 nm
+    以上1 nm未満の粒子対で既定の ``apply_qcm=None`` を使うとQCMを自動適用する。
+    ``apply_qcm=False`` はValidation Test 4用の古典比較だけに限る内部フックである。
     """
     wavelength_m = _require_finite_positive(wavelength_m, name="wavelength_m")
     medium_refractive_index = _require_finite_positive(
@@ -272,7 +439,9 @@ def solve_cda(
     )
     positions = _as_positions(positions_m)
     diameters = _as_diameters(diameters_m, particle_count=len(positions))
-    geometry_warnings = _validate_surface_gaps(
+    if apply_qcm is not None and not isinstance(apply_qcm, bool):
+        raise CdaConfigurationError("apply_qcm must be None or bool")
+    geometry_warnings, qcm_pairs = _validate_surface_gaps(
         positions_m=positions,
         diameters_m=diameters,
     )
@@ -309,16 +478,38 @@ def solve_cda(
     )
     wave_number_m_inv = polarizability_results[0].wave_number_m_inv
     medium_relative_permittivity = medium_refractive_index**2
-    incident_fields = _incident_electric_fields(
+    (
+        qcm_bridge_positions,
+        qcm_bridge_polarizabilities,
+        qcm_applied,
+        qcm_bridge_count,
+        qcm_classical_limit_pair_count,
+        qcm_max_relative_permittivity_contrast,
+        qcm_warnings,
+    ) = _build_qcm_auxiliary_dipoles(
         positions_m=positions,
+        diameters_m=diameters,
+        qcm_pairs=qcm_pairs,
+        wavelength_m=wavelength_m,
+        medium_relative_permittivity=medium_relative_permittivity,
+        qcm_parameter_table=qcm_parameter_table,
+        apply_qcm=apply_qcm,
+        qcm_layer_count=qcm_layer_count,
+    )
+    interaction_positions = np.vstack((positions, qcm_bridge_positions))
+    interaction_polarizabilities_si = np.concatenate(
+        (polarizabilities_si, qcm_bridge_polarizabilities)
+    )
+    interaction_incident_fields = _incident_electric_fields(
+        positions_m=interaction_positions,
         wave_number_m_inv=wave_number_m_inv,
         propagation_direction=normalized_propagation_direction,
         polarization=normalized_polarization,
         incident_field_amplitude_v_m=incident_field_amplitude_v_m,
     )
     interaction_matrix = _build_interaction_matrix(
-        positions_m=positions,
-        polarizabilities_si=polarizabilities_si,
+        positions_m=interaction_positions,
+        polarizabilities_si=interaction_polarizabilities_si,
         wave_number_m_inv=wave_number_m_inv,
         medium_relative_permittivity=medium_relative_permittivity,
     )
@@ -329,7 +520,9 @@ def solve_cda(
             f"(condition number {condition_number:.6g}, limit {max_condition_number:.6g})"
         )
 
-    right_hand_side = (polarizabilities_si[:, np.newaxis] * incident_fields).reshape(-1)
+    right_hand_side = (
+        interaction_polarizabilities_si[:, np.newaxis] * interaction_incident_fields
+    ).reshape(-1)
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", linalg.LinAlgWarning)
@@ -356,12 +549,13 @@ def solve_cda(
             f"({relative_residual:.6g} > {residual_limit:.6g})"
         )
 
-    induced_dipoles = np.asarray(
-        flat_dipoles.reshape((len(positions), 3)),
+    interaction_induced_dipoles = np.asarray(
+        flat_dipoles.reshape((len(interaction_positions), 3)),
         dtype=np.complex128,
     )
-    if not np.all(np.isfinite(induced_dipoles)):
+    if not np.all(np.isfinite(interaction_induced_dipoles)):
         raise CdaLinearSolveError("CDA induced dipoles are non-finite")
+    induced_dipoles = interaction_induced_dipoles[: len(positions)]
 
     return CdaSolution(
         wavelength_m=wavelength_m,
@@ -371,12 +565,27 @@ def solve_cda(
         diameters_m=diameters,
         propagation_direction=normalized_propagation_direction,
         polarization=normalized_polarization,
-        incident_electric_fields_v_m=incident_fields,
+        incident_electric_fields_v_m=interaction_incident_fields[: len(positions)],
         induced_dipoles_c_m=induced_dipoles,
         polarizabilities_si=polarizabilities_si,
+        interaction_positions_m=interaction_positions,
+        interaction_incident_electric_fields_v_m=interaction_incident_fields,
+        interaction_induced_dipoles_c_m=interaction_induced_dipoles,
+        interaction_polarizabilities_si=interaction_polarizabilities_si,
         condition_number=condition_number,
         relative_residual=relative_residual,
-        warnings=geometry_warnings,
+        warnings=geometry_warnings + qcm_warnings,
+        qcm_applied=qcm_applied,
+        qcm_layer_count=qcm_layer_count if qcm_applied else None,
+        qcm_plasma_energy_ev=(
+            AU_JELLIUM_QCM_PLASMA_ENERGY_EV if qcm_applied else None
+        ),
+        qcm_bulk_damping_energy_ev=(
+            AU_JELLIUM_QCM_BULK_DAMPING_ENERGY_EV if qcm_applied else None
+        ),
+        qcm_bridge_count=qcm_bridge_count,
+        qcm_classical_limit_pair_count=qcm_classical_limit_pair_count,
+        qcm_max_relative_permittivity_contrast=qcm_max_relative_permittivity_contrast,
     )
 
 
@@ -408,16 +617,16 @@ def calculate_cda_cross_sections(solution: CdaSolution) -> CdaCrossSections:
     medium_relative_permittivity = solution.medium_refractive_index**2
     incident_amplitude_squared = float(
         np.vdot(
-            solution.incident_electric_fields_v_m[0],
-            solution.incident_electric_fields_v_m[0],
+            solution.interaction_incident_electric_fields_v_m[0],
+            solution.interaction_incident_electric_fields_v_m[0],
         ).real
     )
     if incident_amplitude_squared <= 0.0:
         raise CdaLinearSolveError("incident electric-field amplitude is invalid")
 
     extinction_overlap = np.vdot(
-        solution.incident_electric_fields_v_m,
-        solution.induced_dipoles_c_m,
+        solution.interaction_incident_electric_fields_v_m,
+        solution.interaction_induced_dipoles_c_m,
     )
     c_ext_m2 = (
         solution.wave_number_m_inv
@@ -430,12 +639,14 @@ def calculate_cda_cross_sections(solution: CdaSolution) -> CdaCrossSections:
     )
 
     scattering_overlap = 0.0j
-    for target_index, target_dipole in enumerate(solution.induced_dipoles_c_m):
-        for source_index, source_dipole in enumerate(solution.induced_dipoles_c_m):
+    for target_index, target_dipole in enumerate(solution.interaction_induced_dipoles_c_m):
+        for source_index, source_dipole in enumerate(
+            solution.interaction_induced_dipoles_c_m
+        ):
             imaginary_green = imaginary_part_of_green_tensor(
                 relative_position_m=(
-                    solution.positions_m[target_index]
-                    - solution.positions_m[source_index]
+                    solution.interaction_positions_m[target_index]
+                    - solution.interaction_positions_m[source_index]
                 ),
                 wave_number_m_inv=solution.wave_number_m_inv,
             )
@@ -481,6 +692,9 @@ def calculate_cda_spectrum(
     apply_kreibig_correction: bool = False,
     kreibig_parameters: KreibigParameters | None = None,
     max_condition_number: float = DEFAULT_MAX_CONDITION_NUMBER,
+    qcm_parameter_table: GammaGParameterTable | None = None,
+    apply_qcm: bool | None = None,
+    qcm_layer_count: int = DEFAULT_QCM_LAYER_COUNT,
 ) -> CdaSpectrum:
     """同じ粒子配置について、複数真空波長の CDA スペクトルを計算する。"""
     wavelengths = np.asarray(wavelengths_m, dtype=np.float64)
@@ -494,6 +708,9 @@ def calculate_cda_spectrum(
     c_abs_m2 = np.empty_like(wavelengths)
     condition_numbers = np.empty_like(wavelengths)
     geometry_warnings: tuple[str, ...] | None = None
+    qcm_applied: bool | None = None
+    qcm_bridge_count: int | None = None
+    qcm_classical_limit_pair_count: int | None = None
     for index, wavelength_m in enumerate(wavelengths):
         solution = solve_cda(
             positions_m=positions_m,
@@ -507,6 +724,9 @@ def calculate_cda_spectrum(
             apply_kreibig_correction=apply_kreibig_correction,
             kreibig_parameters=kreibig_parameters,
             max_condition_number=max_condition_number,
+            qcm_parameter_table=qcm_parameter_table,
+            apply_qcm=apply_qcm,
+            qcm_layer_count=qcm_layer_count,
         )
         cross_sections = calculate_cda_cross_sections(solution)
         c_ext_m2[index] = cross_sections.c_ext_m2
@@ -515,6 +735,9 @@ def calculate_cda_spectrum(
         condition_numbers[index] = solution.condition_number
         if geometry_warnings is None:
             geometry_warnings = solution.warnings
+            qcm_applied = solution.qcm_applied
+            qcm_bridge_count = solution.qcm_bridge_count
+            qcm_classical_limit_pair_count = solution.qcm_classical_limit_pair_count
 
     return CdaSpectrum(
         wavelength_m=wavelengths,
@@ -523,4 +746,13 @@ def calculate_cda_spectrum(
         c_abs_m2=c_abs_m2,
         condition_numbers=condition_numbers,
         warnings=geometry_warnings or (),
+        qcm_applied=bool(qcm_applied),
+        qcm_plasma_energy_ev=(
+            AU_JELLIUM_QCM_PLASMA_ENERGY_EV if qcm_applied else None
+        ),
+        qcm_bulk_damping_energy_ev=(
+            AU_JELLIUM_QCM_BULK_DAMPING_ENERGY_EV if qcm_applied else None
+        ),
+        qcm_bridge_count=qcm_bridge_count or 0,
+        qcm_classical_limit_pair_count=qcm_classical_limit_pair_count or 0,
     )

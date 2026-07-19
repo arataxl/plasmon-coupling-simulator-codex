@@ -7,11 +7,15 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from scipy.constants import c as SPEED_OF_LIGHT_M_PER_S
 
 from src.io.qcm_parameter_table import load_gamma_g_au_digitized
 from src.physics.qcm import (
+    AU_JELLIUM_QCM_PLASMA_ENERGY_EV,
     GammaGParameterTable,
     QcmSeparationBelowDigitizedRangeError,
+    calculate_qcm_gap_permittivity,
+    energy_ev_to_angular_frequency_rad_s,
     interpolate_gamma_g_from_separation_nm,
 )
 
@@ -101,3 +105,44 @@ def test_interpolated_values_are_finite_within_digitized_range(
         assert not result.classical_limit
         assert result.gamma_g_ev is not None
         assert math.isfinite(result.gamma_g_ev)
+
+
+def test_qcm_gap_permittivity_uses_the_documented_drude_form(
+    parameter_table: GammaGParameterTable,
+) -> None:
+    """Eq. (3)由来のDrude項を媒質基線へ正しく加える。"""
+    angular_frequency_rad_s = 2.0 * math.pi * SPEED_OF_LIGHT_M_PER_S / 600.0e-9
+    medium_relative_permittivity = 1.33**2
+    result = calculate_qcm_gap_permittivity(
+        separation_m=0.5e-9,
+        angular_frequency_rad_s=angular_frequency_rad_s,
+        medium_relative_permittivity=medium_relative_permittivity,
+        parameter_table=parameter_table,
+    )
+    assert not result.classical_limit
+    assert result.gamma_g_ev is not None
+    assert result.gamma_g_rad_s is not None
+    expected_permittivity = medium_relative_permittivity - (
+        energy_ev_to_angular_frequency_rad_s(AU_JELLIUM_QCM_PLASMA_ENERGY_EV) ** 2
+        / (
+            angular_frequency_rad_s
+            * (angular_frequency_rad_s + 1j * result.gamma_g_rad_s)
+        )
+    )
+    assert result.relative_permittivity == pytest.approx(expected_permittivity)
+
+
+def test_qcm_gap_permittivity_returns_the_medium_in_the_classical_limit(
+    parameter_table: GammaGParameterTable,
+) -> None:
+    """表の上限超過時に有限gammaを外挿せず、媒質へ厳密に戻す。"""
+    medium_relative_permittivity = 1.33**2
+    result = calculate_qcm_gap_permittivity(
+        separation_m=0.7e-9,
+        angular_frequency_rad_s=2.0 * math.pi * SPEED_OF_LIGHT_M_PER_S / 600.0e-9,
+        medium_relative_permittivity=medium_relative_permittivity,
+        parameter_table=parameter_table,
+    )
+    assert result.classical_limit
+    assert result.gamma_g_ev is None
+    assert result.relative_permittivity == complex(medium_relative_permittivity)

@@ -1,8 +1,10 @@
-"""Esteban et al. (2012) Fig. 2dのAu暫定表を用いるQCM距離パラメータ。
+"""Esteban et al. (2012) Fig. 2dのAu暫定表を用いるQCM物理モデル。
 
-このモジュールはQCM薄層やCDAへの統合を行わず、版管理された暫定デジタイズ表を
-補間する純粋な物理層だけを提供する。表はAu jelliumの青色実線をWebPlotDigitizerで
-手動読取りしたものであり、原著者の数値表・係数表ではない。
+表はAu jelliumの青色実線をWebPlotDigitizerで手動読取りしたものであり、原著者の
+数値表・係数表ではない。QCMの局所誘電率はEsteban et al. (2012)の式(3)に基づき、
+4層の環状ギャップ領域はCDAでは体積等価の補助双極子へ縮約する。このCDA縮約は
+原論文のBEM/FEM実装そのものではなく、適用範囲と限界を
+``docs/quantum_corrected_model_integration.md`` に記録する。
 """
 
 from __future__ import annotations
@@ -11,12 +13,22 @@ import math
 from dataclasses import dataclass
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
+from scipy.constants import elementary_charge as ELEMENTARY_CHARGE_C
+from scipy.constants import epsilon_0 as VACUUM_PERMITTIVITY_F_PER_M
+from scipy.constants import hbar as REDUCED_PLANCK_CONSTANT_J_S
 from scipy.interpolate import PchipInterpolator
+from scipy.optimize import brentq
 
 
 ANGSTROMS_PER_NANOMETRE = 10.0
+ANGSTROM_M = 1.0e-10
+NANOMETRE_M = 1.0e-9
 QCM_PARAMETER_STATUS = "provisional_digitized"
+AU_JELLIUM_QCM_PLASMA_ENERGY_EV = 7.9
+AU_JELLIUM_QCM_BULK_DAMPING_ENERGY_EV = 0.09
+DEFAULT_QCM_LAYER_COUNT = 4
+SUPPORTED_QCM_LAYER_COUNTS = frozenset((3, 4, 5))
 
 FloatArray = NDArray[np.float64]
 
@@ -27,6 +39,43 @@ class QcmParameterError(ValueError):
 
 class QcmSeparationBelowDigitizedRangeError(QcmParameterError):
     """デジタイズ表の下限未満に対する外挿を拒否する。"""
+
+
+@dataclass(frozen=True)
+class QcmGapPermittivity:
+    """一つの局所ギャップ幅に対応するQCM相対誘電率。"""
+
+    separation_m: float
+    angular_frequency_rad_s: float
+    medium_relative_permittivity: float
+    gamma_g_ev: float | None
+    gamma_g_rad_s: float | None
+    relative_permittivity: complex
+    classical_limit: bool
+
+
+@dataclass(frozen=True)
+class QcmBridgeLayer:
+    """CDA補助双極子へ縮約する一つの環状QCM層。"""
+
+    radial_inner_m: float
+    radial_outer_m: float
+    representative_separation_m: float
+    volume_m3: float
+    relative_permittivity: complex
+    polarizability_si: complex
+
+
+@dataclass(frozen=True)
+class QcmBridge:
+    """一つの近接粒子対に対するCDA用の補助双極子。"""
+
+    position_m: FloatArray
+    axis: FloatArray
+    polarizability_si: complex
+    layers: tuple[QcmBridgeLayer, ...]
+    classical_limit: bool
+    max_relative_permittivity_contrast: float
 
 
 @dataclass(frozen=True)
@@ -129,4 +178,296 @@ def interpolate_gamma_g_from_separation_nm(
         separation_nm=separation_nm,
         gamma_g_ev=gamma_g_ev,
         classical_limit=False,
+    )
+
+
+def energy_ev_to_angular_frequency_rad_s(energy_ev: float) -> float:
+    """エネルギーeVを ``omega = E / hbar`` により角周波数rad/sへ変換する。
+
+    ``E[eV] * e`` をJへ変換し、SIの換算定義 ``omega = E[J] / hbar[J s]`` を
+    用いる。物理定数はNIST/CODATA 2022に対応するSciPy定数から取得する。
+    """
+    energy_ev = _require_finite_nonnegative(energy_ev, name="energy_ev")
+    if energy_ev == 0.0:
+        return 0.0
+    angular_frequency_rad_s = (
+        energy_ev * ELEMENTARY_CHARGE_C / REDUCED_PLANCK_CONSTANT_J_S
+    )
+    if not math.isfinite(angular_frequency_rad_s) or angular_frequency_rad_s <= 0.0:
+        raise QcmParameterError("energy conversion produced an invalid angular frequency")
+    return angular_frequency_rad_s
+
+
+def _require_finite_positive(value: float, *, name: str) -> float:
+    if not math.isfinite(value) or value <= 0.0:
+        raise QcmParameterError(f"{name} must be finite and positive")
+    return value
+
+
+def calculate_qcm_gap_permittivity(
+    *,
+    separation_m: float,
+    angular_frequency_rad_s: float,
+    medium_relative_permittivity: float,
+    parameter_table: GammaGParameterTable,
+) -> QcmGapPermittivity:
+    """局所分離距離からQCMの架空トンネル媒質の相対誘電率を構成する。
+
+    Esteban et al., *Nature Communications* 3, 825 (2012), 式(3)は真空中の
+    Drude型ギャップ媒質を
+
+    ``epsilon_g(l, omega) = 1 - omega_p^2 / [omega (omega + i gamma_g(l))]``
+
+    と定義する。ここでは同論文のAu jellium例で記録された
+    ``hbar omega_p = 7.9 eV`` を用い、``gamma_g(l)`` はFig. 2dの暫定表から
+    得る。これはJohnson and Christyのバルク誘電率やKreibig補正のパラメータへ
+    転用しない。
+
+    非真空の均一媒質では、Faraday Discussions 178, 151--183 (2015), 式(19)の
+    媒質基線を採り、未校正のd電子減衰項を加えず
+
+    ``epsilon_g(l, omega) = epsilon_medium
+        - omega_p^2 / [omega (omega + i gamma_g(l))]``
+
+    とする。これは真空では式(3)へ一致し、表の上限超過時に
+    ``epsilon_g = epsilon_medium`` という古典極限へ厳密に戻る。Faraday Discussions
+    論文はAu局所QCMでこのd電子項を無視しても主要なスペクトルを本質的に変えないと
+    報告するが、本CDA縮約の定量精度を保証するものではない。
+
+    すべての長さはm、角周波数はrad/s、誘電率は無次元の相対値である。デジタイズ表の
+    上限を超える場合は有限値を外挿せず、媒質そのものを返す。
+    """
+    separation_m = _require_finite_nonnegative(separation_m, name="separation_m")
+    angular_frequency_rad_s = _require_finite_positive(
+        angular_frequency_rad_s,
+        name="angular_frequency_rad_s",
+    )
+    medium_relative_permittivity = _require_finite_positive(
+        medium_relative_permittivity,
+        name="medium_relative_permittivity",
+    )
+    interpolation = interpolate_gamma_g_from_separation_nm(
+        separation_nm=separation_m / NANOMETRE_M,
+        parameter_table=parameter_table,
+    )
+    if interpolation.classical_limit:
+        return QcmGapPermittivity(
+            separation_m=separation_m,
+            angular_frequency_rad_s=angular_frequency_rad_s,
+            medium_relative_permittivity=medium_relative_permittivity,
+            gamma_g_ev=None,
+            gamma_g_rad_s=None,
+            relative_permittivity=complex(medium_relative_permittivity),
+            classical_limit=True,
+        )
+
+    assert interpolation.gamma_g_ev is not None
+    plasma_frequency_rad_s = energy_ev_to_angular_frequency_rad_s(
+        AU_JELLIUM_QCM_PLASMA_ENERGY_EV
+    )
+    gamma_g_rad_s = energy_ev_to_angular_frequency_rad_s(interpolation.gamma_g_ev)
+    denominator = angular_frequency_rad_s * (
+        angular_frequency_rad_s + 1j * gamma_g_rad_s
+    )
+    relative_permittivity = complex(
+        medium_relative_permittivity - plasma_frequency_rad_s**2 / denominator
+    )
+    if not np.isfinite(relative_permittivity):
+        raise FloatingPointError("QCM gap permittivity is non-finite")
+    return QcmGapPermittivity(
+        separation_m=separation_m,
+        angular_frequency_rad_s=angular_frequency_rad_s,
+        medium_relative_permittivity=medium_relative_permittivity,
+        gamma_g_ev=interpolation.gamma_g_ev,
+        gamma_g_rad_s=gamma_g_rad_s,
+        relative_permittivity=relative_permittivity,
+        classical_limit=False,
+    )
+
+
+def _as_position_m(values: ArrayLike, *, name: str) -> FloatArray:
+    position_m = np.asarray(values, dtype=np.float64)
+    if position_m.shape != (3,) or not np.all(np.isfinite(position_m)):
+        raise QcmParameterError(f"{name} must be a finite vector with shape (3,)")
+    return position_m
+
+
+def _local_sphere_gap_m(
+    *,
+    center_distance_m: float,
+    left_radius_m: float,
+    right_radius_m: float,
+    radial_distance_m: float,
+) -> float:
+    """二球の中心軸に平行な線上での局所ギャップ幅を返す。"""
+    if radial_distance_m < 0.0 or radial_distance_m > min(left_radius_m, right_radius_m):
+        raise QcmParameterError("radial distance is outside the opposing sphere surfaces")
+    left_half_chord_m = math.sqrt(
+        max(left_radius_m**2 - radial_distance_m**2, 0.0)
+    )
+    right_half_chord_m = math.sqrt(
+        max(right_radius_m**2 - radial_distance_m**2, 0.0)
+    )
+    return center_distance_m - left_half_chord_m - right_half_chord_m
+
+
+def _cm_polarizability_for_equivalent_sphere(
+    *,
+    volume_m3: float,
+    inclusion_relative_permittivity: complex,
+    medium_relative_permittivity: float,
+) -> complex:
+    """体積等価の小球に対するClausius--Mossotti SI分極率を返す。"""
+    if volume_m3 <= 0.0:
+        return 0.0j
+    contrast = inclusion_relative_permittivity - medium_relative_permittivity
+    denominator = inclusion_relative_permittivity + 2.0 * medium_relative_permittivity
+    if denominator == 0.0 or not np.isfinite(denominator):
+        raise QcmParameterError("QCM layer polarizability is singular")
+    polarizability_si = (
+        3.0
+        * VACUUM_PERMITTIVITY_F_PER_M
+        * medium_relative_permittivity
+        * volume_m3
+        * contrast
+        / denominator
+    )
+    if not np.isfinite(polarizability_si):
+        raise QcmParameterError("QCM layer polarizability is non-finite")
+    return complex(polarizability_si)
+
+
+def build_qcm_bridge_for_sphere_pair(
+    *,
+    left_position_m: ArrayLike,
+    right_position_m: ArrayLike,
+    left_radius_m: float,
+    right_radius_m: float,
+    angular_frequency_rad_s: float,
+    medium_relative_permittivity: float,
+    parameter_table: GammaGParameterTable,
+    layer_count: int = DEFAULT_QCM_LAYER_COUNT,
+) -> QcmBridge:
+    """二球間のQCM環状層を、CDA用の一つの補助双極子へ縮約する。
+
+    Esteban et al. (2012)は、局所ギャップ幅 ``l(rho)`` ごとの誘電率を同心環状
+    シェルへ離散化し、BEM/FEMでMaxwell方程式を解く。CDAには局所面要素がないため、
+    本MVPでは、表の上限以内の領域を等投影面積の ``layer_count`` 環状層へ分ける。
+    各層は体積等価の小球のClausius--Mossotti分極率に写像し、その和を最接近点の
+    中点に置く補助双極子の分極率とする。
+
+    この写像は、QCM媒質と背景媒質のコントラストが小さいときの一次体積積分近似であり、
+    環状層間の自己無撞着相互作用と局所場の横方向変化を捨てる。原論文のBEM/FEM実装と
+    等価ではない。層数3/4/5の内部感度と、モデル誤差が外部参照なしには未評価であることを
+    文書と結果メタデータへ残す。
+    """
+    if layer_count not in SUPPORTED_QCM_LAYER_COUNTS:
+        raise QcmParameterError(
+            "layer_count must be one of "
+            f"{sorted(SUPPORTED_QCM_LAYER_COUNTS)} for QCM convergence checks"
+        )
+    left_radius_m = _require_finite_positive(left_radius_m, name="left_radius_m")
+    right_radius_m = _require_finite_positive(right_radius_m, name="right_radius_m")
+    left_position = _as_position_m(left_position_m, name="left_position_m")
+    right_position = _as_position_m(right_position_m, name="right_position_m")
+    displacement_m = right_position - left_position
+    center_distance_m = float(np.linalg.norm(displacement_m))
+    if not math.isfinite(center_distance_m) or center_distance_m <= 0.0:
+        raise QcmParameterError("sphere centers must have a finite non-zero separation")
+    axis = displacement_m / center_distance_m
+    surface_gap_m = center_distance_m - left_radius_m - right_radius_m
+    if surface_gap_m < 0.0:
+        raise QcmParameterError("QCM bridge cannot be built for overlapping spheres")
+    bridge_position = left_position + axis * (left_radius_m + surface_gap_m / 2.0)
+
+    _, maximum_angstrom = parameter_table.separation_range_angstrom
+    maximum_table_separation_m = maximum_angstrom * ANGSTROM_M
+    if surface_gap_m >= maximum_table_separation_m:
+        return QcmBridge(
+            position_m=bridge_position,
+            axis=axis,
+            polarizability_si=0.0j,
+            layers=(),
+            classical_limit=True,
+            max_relative_permittivity_contrast=0.0,
+        )
+
+    maximum_radial_distance_m = min(left_radius_m, right_radius_m)
+    try:
+        radial_limit_m = brentq(
+            lambda radial_distance_m: _local_sphere_gap_m(
+                center_distance_m=center_distance_m,
+                left_radius_m=left_radius_m,
+                right_radius_m=right_radius_m,
+                radial_distance_m=radial_distance_m,
+            )
+            - maximum_table_separation_m,
+            0.0,
+            maximum_radial_distance_m,
+        )
+    except ValueError as error:
+        raise QcmParameterError(
+            "could not locate the QCM digitized-range boundary on the sphere pair"
+        ) from error
+    radial_boundaries_squared_m2 = np.linspace(
+        0.0,
+        radial_limit_m**2,
+        layer_count + 1,
+    )
+    layers: list[QcmBridgeLayer] = []
+    bridge_polarizability_si = 0.0j
+    maximum_contrast = 0.0
+    for layer_index in range(layer_count):
+        radial_inner_m = math.sqrt(radial_boundaries_squared_m2[layer_index])
+        radial_outer_m = math.sqrt(radial_boundaries_squared_m2[layer_index + 1])
+        representative_radial_distance_m = math.sqrt(
+            (radial_boundaries_squared_m2[layer_index]
+            + radial_boundaries_squared_m2[layer_index + 1])
+            / 2.0
+        )
+        representative_separation_m = _local_sphere_gap_m(
+            center_distance_m=center_distance_m,
+            left_radius_m=left_radius_m,
+            right_radius_m=right_radius_m,
+            radial_distance_m=representative_radial_distance_m,
+        )
+        permittivity = calculate_qcm_gap_permittivity(
+            separation_m=representative_separation_m,
+            angular_frequency_rad_s=angular_frequency_rad_s,
+            medium_relative_permittivity=medium_relative_permittivity,
+            parameter_table=parameter_table,
+        )
+        annular_area_m2 = math.pi * (radial_outer_m**2 - radial_inner_m**2)
+        volume_m3 = annular_area_m2 * representative_separation_m
+        polarizability_si = _cm_polarizability_for_equivalent_sphere(
+            volume_m3=volume_m3,
+            inclusion_relative_permittivity=permittivity.relative_permittivity,
+            medium_relative_permittivity=medium_relative_permittivity,
+        )
+        layers.append(
+            QcmBridgeLayer(
+                radial_inner_m=radial_inner_m,
+                radial_outer_m=radial_outer_m,
+                representative_separation_m=representative_separation_m,
+                volume_m3=volume_m3,
+                relative_permittivity=permittivity.relative_permittivity,
+                polarizability_si=polarizability_si,
+            )
+        )
+        bridge_polarizability_si += polarizability_si
+        maximum_contrast = max(
+            maximum_contrast,
+            abs(permittivity.relative_permittivity - medium_relative_permittivity)
+            / medium_relative_permittivity,
+        )
+
+    if not np.isfinite(bridge_polarizability_si):
+        raise QcmParameterError("QCM bridge polarizability is non-finite")
+    return QcmBridge(
+        position_m=bridge_position,
+        axis=axis,
+        polarizability_si=complex(bridge_polarizability_si),
+        layers=tuple(layers),
+        classical_limit=False,
+        max_relative_permittivity_contrast=float(maximum_contrast),
     )

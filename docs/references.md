@@ -61,6 +61,16 @@
    - Supplementary Information（Supplementary Figures S1--S2、
      Supplementary Discussion）には、Auの `gamma_g(l)` 数値表、Au係数、
      Au向けフィット手順は確認できない。
+   - Esteban, R.; Zugarramurdi, A.; Zhang, P.; Nordlander, P.; García-Vidal,
+     F. J.; Borisov, A. G.; Aizpurua, J.
+     A classical treatment of optical tunneling in plasmonic gaps: extending the
+     quantum corrected model to practical situations.
+     Faraday Discussions 178, 151--183 (2015).
+     DOI: 10.1039/C4FD00196F
+   - 用途：任意の背景媒質へのQCM拡張（式19）、局所ギャップ幅に応じた環状シェルの
+     実装、Au局所QCMにおけるd電子項省略の位置付け。本文のAuパラメータ
+     `hbar omega_p = 9.065 eV`、`hbar gamma_p = 0.0708 eV` は別の経験的
+     フィットであり、本MVPのFig. 2d暫定表・2012年のAu jellium設定へ混在させない。
 
 7. 物理定数
    - NIST, CODATA Recommended Values of the Fundamental Physical Constants:
