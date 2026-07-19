@@ -36,4 +36,4 @@
      等価的な局所誘電応答として古典電磁場計算へ組み込むQCMの理論的根拠
    - 注意：本ツールでの適用範囲と距離しきい値は、原論文の数値を
      そのまま流用せず、`docs/physics_assumptions.md` と
-     `docs/QCM統合指示書.md` の運用ルールに従う
+     `docs/quantum_corrected_model_integration.md` の運用ルールに従う

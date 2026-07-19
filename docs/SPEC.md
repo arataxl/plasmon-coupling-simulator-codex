@@ -5,7 +5,7 @@
 - 対象リリース：Build Week 提出版（MVP）
 - 対象利用者：研究者・学生
 - 本書の役割：提出版で提供する価値、機能境界、受入基準を定義する。
-- 物理モデルの適用範囲は本書で新設しない。`docs/physics_assumptions.md`、`docs/QCM統合指示書.md`、`docs/validation_plan.md` を正とし、本書はそれらを実装要件へ展開する。
+- 物理モデルの適用範囲は本書で新設しない。`docs/physics_assumptions.md`、`docs/quantum_corrected_model_integration.md`、`docs/validation_plan.md` を正とし、本書はそれらを実装要件へ展開する。
 - 決定済みの数値基準とモデル選択は第9節に記録し、物理パラメータを独自に補わない。
 
 ## 1. 目的（Purpose）
@@ -144,7 +144,7 @@ Test 3 にある BEM/DDA との代表条件比較は「可能になった段階�
 
 ## 10. 参照文書の整合性メモ
 
-- 本リポジトリには `docs/quantum_corrected_model_integration.md` は存在せず、同内容を掲げる `docs/QCM統合指示書.md` が存在する。本仕様では後者を参照した。ファイル名を統一する場合は、リンク切れを起こさない別タスクとして扱う。
+- QCM統合指示書は `docs/quantum_corrected_model_integration.md` に統一した。旧ファイル名は残さず、参照先はすべて同ファイルを正本とする。
 - `docs/physics_assumptions.md` は、ギャップ 1〜5 nm を警告表示対象、0.5〜1 nm を QCM 補正対象、0.5 nm 未満を計算不可とする。一方 README の既存記述には、ギャップ 2 nm 未満を一律「参考値」とする旧い分類と、量子トンネル効果を含まないとする記述が残る。MVP の挙動は前者（物理前提）を正とし、README は将来整合させる必要がある。
 - Esteban et al. (2012) は `docs/references.md` に登録済みである。Supplementary InformationでAu係数表は確認できなかったため、MVPではFig. 2dのデジタイズ表を暫定参照表として扱う。
 - QCM 指示書が示す原論文の非接触領域の目安と、本ツールの QCM 上限 1 nm は一致しない。ただし同指示書はこれを意図的な安全マージンと明記している。本仕様はこの運用ルールを変更しない。

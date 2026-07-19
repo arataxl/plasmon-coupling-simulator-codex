@@ -1,4 +1,4 @@
-# QCM統合指示書（quantum_corrected_model_integration.md）
+# QCM統合指示書
 
 ## 目的
 粒子間表面ギャップが1 nm未満の領域において、電子トンネル効果を
