@@ -1,0 +1,2 @@
+# The vendored Plotly asset is verified against the upstream SHA-256.
+web/vendor/plotly-2.24.1.min.js -text

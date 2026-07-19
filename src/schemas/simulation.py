@@ -13,6 +13,7 @@ MAX_DIAMETER_NM = 100.0
 MIN_SURFACE_GAP_NM = 0.5
 MIN_WAVELENGTH_NM = 200.0
 MAX_WAVELENGTH_NM = 1500.0
+MAX_SPECTRUM_POINTS = 301
 _GAP_COMPARISON_ABS_TOLERANCE_NM = 1e-12
 
 
@@ -80,6 +81,45 @@ class LightSourceInput(BaseModel):
         return value
 
 
+class SpectrumRangeInput(BaseModel):
+    """スペクトル計算の波長範囲。すべての長さはnm。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    start_wavelength_nm: float = Field(
+        default=MIN_WAVELENGTH_NM,
+        ge=MIN_WAVELENGTH_NM,
+        le=MAX_WAVELENGTH_NM,
+    )
+    end_wavelength_nm: float = Field(
+        default=MAX_WAVELENGTH_NM,
+        ge=MIN_WAVELENGTH_NM,
+        le=MAX_WAVELENGTH_NM,
+    )
+    step_nm: float = Field(default=10.0, gt=0.0)
+
+    @field_validator("start_wavelength_nm", "end_wavelength_nm", "step_nm")
+    @classmethod
+    def validate_finite_values(cls, value: float, info: object) -> float:
+        field_name = getattr(info, "field_name", "value")
+        return _require_finite(value, field_name=field_name)
+
+    @model_validator(mode="after")
+    def validate_range_and_point_count(self) -> Self:
+        if self.end_wavelength_nm < self.start_wavelength_nm:
+            raise ValueError("end_wavelength_nm must be at least start_wavelength_nm")
+        interval_count = math.ceil(
+            (self.end_wavelength_nm - self.start_wavelength_nm) / self.step_nm
+        )
+        point_count = interval_count + 1
+        if point_count > MAX_SPECTRUM_POINTS:
+            raise ValueError(
+                "spectrum range exceeds the synchronous API limit of "
+                f"{MAX_SPECTRUM_POINTS} points; increase step_nm or narrow the range"
+            )
+        return self
+
+
 class SimulationInput(BaseModel):
     """粒子間ギャップを含めて検証するMVP入力。"""
 
@@ -89,6 +129,7 @@ class SimulationInput(BaseModel):
     particles: list[ParticleInput] = Field(min_length=1, max_length=20)
     medium: MediumInput
     light_source: LightSourceInput
+    spectrum: SpectrumRangeInput = Field(default_factory=SpectrumRangeInput)
 
     @model_validator(mode="after")
     def validate_surface_gaps(self) -> Self:
@@ -114,6 +155,8 @@ class SimulationInput(BaseModel):
                     raise ValueError(
                         "surface gap between particles "
                         f"{left_index} and {right_index} is {surface_gap_nm:.12g} nm; "
-                        f"at least {MIN_SURFACE_GAP_NM:g} nm is required"
+                        f"at least {MIN_SURFACE_GAP_NM:g} nm is required because "
+                        "quantum tunnelling makes the classical local-response "
+                        "model unavailable"
                     )
         return self

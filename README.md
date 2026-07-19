@@ -4,11 +4,12 @@
 量子補正モデル（QCM）で条件探索するための、研究者・学生向けローカルWebアプリです。
 実験データの定量再現器や、BEM/DDA/FDTD/TDDFTの代替を目的にはしません。
 
-> 状態：Phase 3のQCM-CDA統合まで実装済みです。Johnson and Christy材料データ、単一球の完全Mie参照計算、
+> 状態：Phase 4の同期API・静的UIの基礎まで実装済みです。Johnson and Christy材料データ、単一球の完全Mie参照計算、
 > FCDA分極率、遅延 Green tensor、CDA中核、入力スキーマ、Validation Test 1〜3・5の
 > 基礎試験に加え、Fig. 2d由来の暫定 `gamma_g` 表、局所誘電率、4層のCDA縮約、Test 4の
-> 物理コア試験を実装済みです。API、UI、JSON/CSV出力、Test 4のUI/API部分、Test 6、
-> セットアップ用バッチは未実装です。
+> 物理コア試験を実装済みです。`POST /simulate`、ローカルPlotly.js UI、ブラウザ直接の
+> 基本CSV/JSONダウンロード、Test 4のAPI入力ブロックを追加しました。SSE進捗・取消、
+> JSON再読込、効率を含む完全なTest 6は未実装です。
 
 ## MVPで目指すこと
 
@@ -43,13 +44,14 @@ Au jellium・大波長域向けのDrude値は、Johnson and Christy (1972) の�
 QCMの物理的根拠、暫定表の抽出方法、4層化の収束確認、限界は
 [docs/quantum_corrected_model_integration.md](docs/quantum_corrected_model_integration.md) を正とします。
 
-## 目標アーキテクチャ
+## 現在のアーキテクチャ
 
 - **計算コア**：Mie参照計算、FCDA分極率、Green tensor、CDA、QCMを `src/physics/` に分離する。
-- **API/ジョブ層**：FastAPI + uvicornで計算開始、取消、結果取得を提供し、重い計算は別プロセスで管理する。
-- **SSE**：進捗と取消状態だけを配信する。スペクトルは計算完了後に一括で表示し、取消時は部分結果を保存・出力しない。
+- **API層**：FastAPI + uvicornの `POST /simulate` が、検証済み入力を同期計算し、結果を応答としてだけ返す。計算結果・部分結果をサーバーへ保存しない。
+- **サービス層**：`src/services/simulation_service.py` が単位変換、CDA/QCM実行、応答メタデータの組立てを担う。
+- **SSE**：進捗と取消状態だけを配信する計画は維持するが、今回の同期APIには未実装である。スペクトルは計算完了後に一括表示する。
 - **UI**：静的HTML/CSS/Vanilla JavaScriptと、ローカル同梱のPlotly.jsを `web/` から同一オリジン配信する。
-- **入出力**：CSVにはスペクトル列、JSONには再計算可能な入力・モデル・材料・QCMメタデータを保存する。
+- **入出力**：現在のUIはブラウザ内で応答JSONと基本スペクトルCSVを直接ダウンロードする。サーバー側の永続保存は行わない。完全なCSV列・JSON再読込はTest 6で追加する。
 
 目標ディレクトリツリー、各層の責務、テスト対応、技術選定は
 [docs/repository_structure.md](docs/repository_structure.md) に記載しています。
@@ -68,24 +70,37 @@ QCMの物理的根拠、暫定表の抽出方法、4層化の収束確認、限�
 実行依存は `requirements.txt`、開発依存は `requirements-dev.txt` に定義しています。
 追加の依存パッケージ、バージョン変更、セットアップ手順の変更は、事前承認を得てから行います。
 
-既存Antigravity方針に従い、Plotly.jsは `2.24.1` をローカルに同梱する予定です。
+既存Antigravity方針に従い、Plotly.js `2.24.1` は `web/vendor/` にローカル同梱しています。
 取得元は `https://cdn.plot.ly/plotly-2.24.1.min.js`、期待SHA-256は
 `d5dae4bdea4f17da17c819b04f7ddcf05e3cffd252194cbe89cbbff40ee1d3c7` です。
 セットアップ実装時には、取得した資産のハッシュをこの値と照合してから配置します。
 
-## セットアップ・起動（実装後の予定）
+## セットアップ・起動
 
-実装後は、初回セットアップに `setup_windows.bat`、起動に `run_app.bat` を使う予定です。
-初回だけ固定Python依存関係とPlotly.js資産の取得・SHA-256検証にネットワークが必要ですが、
-セットアップ後の起動、計算、表示、CSV/JSON出力はオフラインで完結させます。
+Python 3.12 のPython Launcherを利用します。初回は `setup_windows.bat` を実行し、
+仮想環境と承認済み依存を作成します。Plotly.js同梱資産のSHA-256も検証します。
+資産が欠けている場合だけ、公式CDNから取得します。セットアップ後の起動、計算、表示、
+ブラウザへのCSV/JSONダウンロードはオフラインで完結します。
 
 ```powershell
 setup_windows.bat
 run_app.bat
 ```
 
-この2ファイルは現時点では未作成です。実装前に、依存関係の承認とPlotly.js資産の
-取得元・ハッシュの再確認を行います。
+起動後、<http://127.0.0.1:8000/> を開きます。`run_app.bat` は `127.0.0.1` にだけ
+待ち受けます。
+
+### APIの基礎
+
+`POST /simulate` は `SimulationInput` を受け取り、基準波長の `cross_sections`（m²）と、
+波長範囲の `spectrum`（m²）をJSONで返します。波長範囲は `spectrum` の
+`start_wavelength_nm`、`end_wavelength_nm`、`step_nm` で指定します。同期APIでは計算時間を
+抑えるため、返せる格子点数を301点以下に制限しています。SSEと取消は後続Phaseで実装します。
+
+`0.5 ≤ gap < 1.0 nm` でQCMを自動適用した場合、`qcm_metadata` には
+`provisional_digitized`、Fig. 2d、対象曲線、校正点未提供、読取誤差、補間法、層数、
+CDA縮約の限界を必ず含めます。必要な来歴を構成できない場合は、成功結果や500エラーではなく
+明示的なAPIエラーを返します。
 
 ## 検証方針
 
@@ -97,7 +112,8 @@ run_app.bat
 Phase 2までにTest 1、入力スキーマ、Test 2、Test 3、Test 5の基礎pytestを実装済みです。
 加えて、Test 4のうち、暫定 `gamma_g` 表、局所Drude誘電率、CDAへの4層縮約、5.439 Å境界、
 3→4→5層感度を検証する物理コアpytestを実装済みです。QCM-CDA縮約は原論文のBEM/FEMと
-等価ではなく、参考値の傾向探索に限ります。Test 4のUI/API部分、Test 6、API/SSEの統合試験は後続Phaseで追加します。提出時には、実行環境・依存
+等価ではなく、参考値の傾向探索に限ります。Test 4のAPI入力ブロックとQCMメタデータ応答は
+`tests/test_api.py` で確認します。SSE、取消、Test 6、JSON再読込は後続Phaseで追加します。提出時には、実行環境・依存
 バージョン・pass実績を記録します。
 
 ## 開発におけるAI利用記録（Build Week提出用）

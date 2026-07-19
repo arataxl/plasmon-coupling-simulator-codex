@@ -6,6 +6,8 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from src.schemas.simulation import SimulationInput
+
 
 class QcmResultMetadata(BaseModel):
     """QCM適用結果に必須の再現性メタデータ。
@@ -61,3 +63,49 @@ class QcmResultMetadata(BaseModel):
                 + ", ".join(missing_fields)
             )
         return self
+
+
+class CrossSectionsResult(BaseModel):
+    """基準波長におけるCDA断面積。断面積の単位はm^2。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    wavelength_nm: float = Field(gt=0)
+    c_ext_m2: float
+    c_sca_m2: float
+    c_abs_m2: float
+
+
+class SpectrumResult(BaseModel):
+    """CDAスペクトル。波長はnm、断面積はm^2。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    wavelength_nm: list[float]
+    c_ext_m2: list[float]
+    c_sca_m2: list[float]
+    c_abs_m2: list[float]
+
+    @model_validator(mode="after")
+    def validate_matching_lengths(self) -> Self:
+        lengths = {
+            len(self.wavelength_nm),
+            len(self.c_ext_m2),
+            len(self.c_sca_m2),
+            len(self.c_abs_m2),
+        }
+        if len(lengths) != 1 or not self.wavelength_nm:
+            raise ValueError("spectrum arrays must be non-empty and have matching lengths")
+        return self
+
+
+class SimulationResult(BaseModel):
+    """サーバーに保存せず ``POST /simulate`` が返す計算結果。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    input: SimulationInput
+    cross_sections: CrossSectionsResult
+    spectrum: SpectrumResult
+    qcm_metadata: QcmResultMetadata
+    warnings: list[str]

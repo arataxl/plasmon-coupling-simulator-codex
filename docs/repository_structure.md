@@ -87,8 +87,10 @@ Phase 2では `src/physics/polarizability.py`、`src/physics/green_tensor.py`、
 ```
 
 Phase 1・2の物理コアに加え、`data/qcm/`、QCM距離依存表、局所誘電率、4層のCDA縮約、
-Test 4の物理コア試験は実装済みである。`web/`、API、JSON/CSV出力、Test 4のUI/API部分、
-Test 6は後続実装対象とする。
+Test 4の物理コア試験は実装済みである。Phase 4では `src/main.py`、`src/api/`、
+`src/services/simulation_service.py`、静的 `web/` を追加し、同期の `POST /simulate`、
+ブラウザ直ダウンロード、Test 4のAPI入力ブロックを実装した。SSE進捗・取消、JSON再読込、
+完全なCSV/JSON出力、Test 6は後続実装対象とする。
 CSV/JSONはブラウザへのダウンロードとして返し、計算結果を
 サーバー上の実行ディレクトリへ残さない。この方針により、取消時に部分データを
 保存しないというMVP要件を満たしやすくする。

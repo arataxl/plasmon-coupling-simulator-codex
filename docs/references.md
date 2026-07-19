@@ -78,3 +78,12 @@
      https://physics.nist.gov/cuu/pdf/wall_2022.pdf
    - 用途：`hbar = 6.582119569...e-16 eV s` を用いた、エネルギー表示の
      Drudeパラメータから角周波数（rad/s）への変換。
+
+8. UIの均一媒質プリセット
+   - OpenStax, *University Physics Volume 3*, Table 1.1,
+     "Index of Refraction in Various Media".
+     https://openstax.org/books/university-physics-volume-3/pages/1-1-the-propagation-of-light
+   - 用途：20 ℃・真空波長589 nm付近の代表値として、waterの `n=1.33` と
+     ethanolの `n=1.361` をWeb UIの初期プリセットに置く。
+   - 注意：本MVPはこれらを波長全域で一定とする均一・非吸収性媒質近似であり、
+     分散・温度・組成依存を表現しない。

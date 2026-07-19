@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plasmonic Coupling Simulator</title>
+    <link rel="stylesheet" href="/static/css/app.css" />
+    <script defer src="/static/vendor/plotly-2.24.1.min.js"></script>
+    <script defer src="/static/js/api_client.js"></script>
+    <script defer src="/static/js/input_form.js"></script>
+    <script defer src="/static/js/results.js"></script>
+    <script defer src="/static/js/app.js"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div>
+        <p class="eyebrow">LOCAL · OFFLINE AFTER SETUP</p>
+        <h1>Plasmonic Coupling Simulator</h1>
+        <p>
+          Auナノ球のCDA/QCMスペクトルを、条件探索のために計算します。実験の定量再現器ではありません。
+        </p>
+      </div>
+    </header>
+
+    <main class="page-layout">
+      <section class="panel input-panel" aria-labelledby="input-title">
+        <h2 id="input-title">計算条件</h2>
+        <p class="form-help">
+          この画面では同一直径のAu球をx軸上へ等間隔に配置します。3D個別配置は後続の入出力機能で扱います。
+        </p>
+        <form id="simulation-form">
+          <fieldset>
+            <legend>粒子配置</legend>
+            <label>
+              粒子数
+              <input id="particle-count" name="particle-count" type="number" min="1" max="20" value="2" required />
+            </label>
+            <label>
+              粒子径 (nm)
+              <input id="diameter-nm" name="diameter-nm" type="number" min="2" max="100" step="0.1" value="20" required />
+            </label>
+            <label>
+              表面間ギャップ (nm)
+              <input id="gap-nm" name="gap-nm" type="number" min="0.5" step="0.1" value="5" required />
+            </label>
+          </fieldset>
+
+          <fieldset>
+            <legend>波長と媒質</legend>
+            <div class="input-grid">
+              <label>
+                開始波長 (nm)
+                <input id="start-wavelength-nm" type="number" min="200" max="1500" step="1" value="450" required />
+              </label>
+              <label>
+                終了波長 (nm)
+                <input id="end-wavelength-nm" type="number" min="200" max="1500" step="1" value="850" required />
+              </label>
+              <label>
+                刻み (nm)
+                <input id="wavelength-step-nm" type="number" min="0.1" step="0.1" value="10" required />
+              </label>
+            </div>
+            <label>
+              媒質
+              <select id="medium-preset" name="medium-preset">
+                <option value="water">water (n = 1.33)</option>
+                <option value="ethanol">ethanol (n = 1.361)</option>
+                <option value="custom">custom</option>
+              </select>
+            </label>
+            <label>
+              屈折率 n<sub>medium</sub>
+              <input id="medium-refractive-index" type="number" min="0.01" step="0.001" value="1.33" required />
+            </label>
+            <p class="form-help">
+              プリセットは固定屈折率として扱います。温度・波長分散・吸収はこのMVPでは扱いません。
+            </p>
+          </fieldset>
+
+          <fieldset>
+            <legend>偏光</legend>
+            <label>
+              偏光方向（伝搬方向はz軸）
+              <select id="polarization" name="polarization">
+                <option value="x">x軸（配置軸に平行）</option>
+                <option value="y">y軸（配置軸に垂直）</option>
+              </select>
+            </label>
+          </fieldset>
+
+          <p class="safety-note">
+            0.5 nm未満のギャップは計算できません。0.5〜1.0 nmではQCMを自動適用します。
+          </p>
+          <button id="simulate-button" type="submit">スペクトルを計算</button>
+        </form>
+        <p id="progress-message" class="progress-message" role="status" aria-live="polite"></p>
+        <div id="error-message" class="error-message" role="alert" hidden></div>
+      </section>
+
+      <section class="panel result-panel" aria-labelledby="result-title">
+        <div class="result-heading">
+          <div>
+            <h2 id="result-title">計算結果</h2>
+            <p>表示単位：nm²（ダウンロードデータの断面積はm²）</p>
+          </div>
+          <div class="download-actions">
+            <button id="download-csv" type="button" disabled>CSVをダウンロード</button>
+            <button id="download-json" type="button" disabled>JSONをダウンロード</button>
+          </div>
+        </div>
+
+        <aside id="qcm-notice" class="qcm-notice" aria-live="polite" hidden>
+          <strong>暫定デジタイズ値による参考値</strong>
+          <span>Esteban et al. (2012), Fig. 2d、読取誤差5-10%</span>
+        </aside>
+        <ul id="warning-list" class="warning-list" aria-live="polite"></ul>
+        <div id="spectrum-plot" class="spectrum-plot" aria-label="CDAスペクトルのグラフ"></div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      QCM適用結果は傾向探索用の参考値です。BEM/DDA/FDTD/TDDFTとの定量的一致は保証しません。
+    </footer>
+  </body>
+</html>
