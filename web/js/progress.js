@@ -1,10 +1,6 @@
 window.PlasmonProgress = (() => {
   let activeJob = null;
 
-  function t(key, parameters) {
-    return window.PlasmonI18n.t(key, parameters);
-  }
-
   function closeActiveJob(jobId) {
     if (!activeJob || activeJob.jobId !== jobId) {
       return;
@@ -15,7 +11,7 @@ window.PlasmonProgress = (() => {
 
   async function start(payload, handlers) {
     if (activeJob) {
-      throw new Error(t("progress.anotherActive"));
+      throw window.PlasmonI18n.createLocalizedError("progress.anotherActive");
     }
     const { job_id: jobId } = await window.PlasmonApi.startSimulationJob(payload);
     const source = new EventSource(`/simulate/stream/${encodeURIComponent(jobId)}`);
@@ -51,8 +47,10 @@ window.PlasmonProgress = (() => {
       activeJob.terminal = true;
       closeActiveJob(jobId);
       handlers.onError(
-        new Error(
-          window.PlasmonApi.messageForErrorCode(data.code, t("progress.failed")),
+        window.PlasmonApi.errorForCode(
+          data.code,
+          "progress.failed",
+          data.parameters ?? {},
         ),
       );
     });
@@ -61,7 +59,9 @@ window.PlasmonProgress = (() => {
         return;
       }
       closeActiveJob(jobId);
-      handlers.onError(new Error(t("progress.streamDisconnected")));
+      handlers.onError(
+        window.PlasmonI18n.createLocalizedError("progress.streamDisconnected"),
+      );
     };
     return jobId;
   }

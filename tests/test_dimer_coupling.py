@@ -5,7 +5,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.physics.cda_solver import CdaSpectrum, calculate_cda_spectrum
+from src.physics.cda_solver import (
+    WARNING_CDA_GAP_LIMITATION,
+    CdaSpectrum,
+    calculate_cda_spectrum,
+)
 from src.physics.material_data import OpticalConstants, load_au_optical_constants
 
 
@@ -80,9 +84,10 @@ def test_dimer_has_polarization_dependent_continuous_resonance_shift(
         parallel_peak_wavelengths_m.append(_peak_wavelength_m(parallel))
         perpendicular_peak_wavelengths_m.append(_peak_wavelength_m(perpendicular))
 
-        # UI 実装前のため、将来の表示に渡す警告データをここで検証する。
-        assert bool(parallel.warnings) == (gap_nm <= 5.0)
-        assert bool(perpendicular.warnings) == (gap_nm <= 5.0)
+        # 1--5 nmの古典CDA近似限界は、表示文言ではなく構造化コードで渡す。
+        expected_warning_codes = {WARNING_CDA_GAP_LIMITATION} if gap_nm <= 5.0 else set()
+        assert {warning.code for warning in parallel.warnings} == expected_warning_codes
+        assert {warning.code for warning in perpendicular.warnings} == expected_warning_codes
 
     parallel_peaks = np.asarray(parallel_peak_wavelengths_m)
     perpendicular_peaks = np.asarray(perpendicular_peak_wavelengths_m)

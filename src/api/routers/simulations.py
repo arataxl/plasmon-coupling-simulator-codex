@@ -96,7 +96,7 @@ def cancel_simulation_job(
     except SimulationJobNotFoundError as error:
         raise HTTPException(
             status_code=404,
-            detail={"code": "simulation_job_not_found"},
+            detail={"code": "simulation_job_not_found", "parameters": {}},
         ) from error
     return {"job_id": job_id, "cancellation_requested": accepted}
 
@@ -125,7 +125,7 @@ def random_cluster_layout(
     except ParticleLayoutError as error:
         raise HTTPException(
             status_code=422,
-            detail={"code": "random_cluster_generation_failed"},
+            detail={"code": "random_cluster_generation_failed", "parameters": {}},
         ) from error
     try:
         display_positions_m = round_layout_coordinates_for_display(
@@ -137,7 +137,7 @@ def random_cluster_layout(
     except ParticleLayoutError as error:
         raise HTTPException(
             status_code=422,
-            detail={"code": "preset_layout_invalid"},
+            detail={"code": "preset_layout_invalid", "parameters": {}},
         ) from error
     return {
         "particles": [
@@ -188,7 +188,7 @@ def round_layout_for_display(
     except ParticleLayoutError as error:
         raise HTTPException(
             status_code=422,
-            detail={"code": "preset_layout_invalid"},
+            detail={"code": "preset_layout_invalid", "parameters": {}},
         ) from error
     return {
         "particles": [

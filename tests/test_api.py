@@ -119,6 +119,45 @@ def test_simulate_includes_complete_qcm_metadata_for_qcm_gap() -> None:
     assert metadata["qcm_curve"] == "Au jellium, blue solid line"
     assert metadata["qcm_calibration_points"] == "not provided with the digitized data"
     assert metadata["qcm_reading_uncertainty"] == "approximately 5-10%"
+    assert response["warnings"] == [
+        {
+            "code": "qcm_applied",
+            "parameters": {"layer_count": 4, "bridge_count": 1},
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("gap_nm", "expected_warning_code", "qcm_applied"),
+    (
+        (0.7, "qcm_classical_limit", True),
+        (0.9, "qcm_classical_limit", True),
+        (3.0, "cda_gap_limitation", False),
+        (7.0, None, False),
+    ),
+)
+def test_simulate_returns_structured_gap_warning_codes(
+    gap_nm: float,
+    expected_warning_code: str | None,
+    qcm_applied: bool,
+) -> None:
+    """APIは表示文言でなく、言語非依存のコードと数値を返す。"""
+    status_code, response = _post_json("/simulate", _simulation_payload(gap_nm=gap_nm))
+
+    assert status_code == 200
+    assert response["qcm_metadata"]["qcm_applied"] is qcm_applied
+    warnings = response["warnings"]
+    assert all(set(warning) == {"code", "parameters"} for warning in warnings)
+    warning_codes = {warning["code"] for warning in warnings}
+    if expected_warning_code is None:
+        assert warning_codes == set()
+    else:
+        assert warning_codes == {expected_warning_code}
+    if expected_warning_code == "qcm_classical_limit":
+        assert warnings[0]["parameters"] == {"classical_limit_pair_count": 1}
+    if expected_warning_code == "cda_gap_limitation":
+        assert warnings[0]["parameters"]["minimum_gap_nm"] == pytest.approx(gap_nm)
+    assert "cda_gap_limitation" not in warning_codes or gap_nm >= 1.0
 
 
 def test_simulate_rejects_schema_violation_with_a_clear_422_error() -> None:
@@ -129,6 +168,7 @@ def test_simulate_rejects_schema_violation_with_a_clear_422_error() -> None:
 
     assert status_code == 422
     assert response["error"]["code"] == "invalid_input"
+    assert response["error"]["parameters"] == {}
     assert response["error"]["details"]
 
 
@@ -157,7 +197,7 @@ def test_simulate_returns_explicit_error_when_qcm_metadata_is_unavailable(
     assert status_code == 503
     assert response["error"] == {
         "code": "qcm_metadata_unavailable",
-        "message": "QCM provenance fields are unavailable",
+        "parameters": {},
     }
 
 
@@ -173,7 +213,10 @@ def test_synchronous_endpoint_retains_the_301_point_limit() -> None:
 
     assert status_code == 422
     assert response["error"]["code"] == "simulation_failed"
-    assert "synchronous API limit of 301 points" in response["error"]["message"]
+    assert response["error"]["parameters"] == {
+        "maximum_points": 301,
+        "requested_points": 326,
+    }
 
 
 def test_random_cluster_layout_uses_a_valid_seeded_3d_configuration() -> None:
@@ -248,7 +291,9 @@ def test_random_cluster_layout_does_not_expose_internal_generation_errors(
     status_code, response = _post_json("/layouts/random-cluster", payload)
 
     assert status_code == 422
-    assert response == {"detail": {"code": "random_cluster_generation_failed"}}
+    assert response == {
+        "detail": {"code": "random_cluster_generation_failed", "parameters": {}}
+    }
 
 
 def test_unknown_simulation_job_uses_a_structured_error_code() -> None:
@@ -256,7 +301,9 @@ def test_unknown_simulation_job_uses_a_structured_error_code() -> None:
     status_code, response = _post_json("/simulate/jobs/unknown-job/cancel", {})
 
     assert status_code == 404
-    assert response == {"detail": {"code": "simulation_job_not_found"}}
+    assert response == {
+        "detail": {"code": "simulation_job_not_found", "parameters": {}}
+    }
 
 
 def test_random_cluster_layout_can_generate_a_qcm_range_without_crossing_bounds() -> None:

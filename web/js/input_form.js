@@ -34,9 +34,18 @@ window.PlasmonInputForm = (() => {
     ethanol: { name: "ethanol", refractiveIndex: 1.361 },
   };
   let particles = [];
+  const presetErrors = new Map();
 
   function t(key, parameters) {
     return window.PlasmonI18n.t(key, parameters);
+  }
+
+  function message(key, parameters = {}) {
+    return { key, parameters };
+  }
+
+  function messageText(descriptor) {
+    return t(descriptor.key, descriptor.parameters);
   }
 
   function numberFromInput(input) {
@@ -82,20 +91,19 @@ window.PlasmonInputForm = (() => {
     const errors = [];
     const warnings = [];
     if (candidateParticles.length < 1 || candidateParticles.length > maximumParticleCount) {
-      errors.push(t("validation.particleCount", { maximumParticleCount }));
+      errors.push(message("validation.particleCount", { maximumParticleCount }));
       return { errors, warnings };
     }
     candidateParticles.forEach((particle, index) => {
-      const label = t("validation.particleLabel", { index: index + 1 });
       if (!Number.isFinite(particle.diameter_nm)) {
-        errors.push(t("validation.diameterRequired", { label }));
+        errors.push(message("validation.diameterRequired", { index: index + 1 }));
       } else if (
         particle.diameter_nm < minimumDiameterNm ||
         particle.diameter_nm > maximumDiameterNm
       ) {
         errors.push(
-          t("validation.diameterRange", {
-            label,
+          message("validation.diameterRange", {
+            index: index + 1,
             minimumDiameterNm,
             maximumDiameterNm,
           }),
@@ -104,8 +112,8 @@ window.PlasmonInputForm = (() => {
       ["x_nm", "y_nm", "z_nm"].forEach((field) => {
         if (!Number.isFinite(particle[field])) {
           errors.push(
-            t("validation.coordinateRequired", {
-              label,
+            message("validation.coordinateRequired", {
+              index: index + 1,
               axis: field.slice(0, 1),
             }),
           );
@@ -125,22 +133,30 @@ window.PlasmonInputForm = (() => {
           first.z_nm - second.z_nm,
         );
         const surfaceGapNm = centerDistanceNm - (first.diameter_nm + second.diameter_nm) / 2;
-        const pairLabel = t("validation.pairLabel", {
-          leftIndex: left + 1,
-          rightIndex: right + 1,
-        });
         const formattedSurfaceGapNm = surfaceGapNm.toFixed(3);
         if (surfaceGapNm < minimumGapNm - 1e-12) {
           errors.push(
-            t("validation.gapBelow", { pairLabel, surfaceGapNm: formattedSurfaceGapNm }),
+            message("validation.gapBelow", {
+              leftIndex: left + 1,
+              rightIndex: right + 1,
+              surfaceGapNm: formattedSurfaceGapNm,
+            }),
           );
         } else if (surfaceGapNm < 1.0) {
           warnings.push(
-            t("validation.gapQcm", { pairLabel, surfaceGapNm: formattedSurfaceGapNm }),
+            message("validation.gapQcm", {
+              leftIndex: left + 1,
+              rightIndex: right + 1,
+              surfaceGapNm: formattedSurfaceGapNm,
+            }),
           );
         } else if (surfaceGapNm <= 5.0) {
           warnings.push(
-            t("validation.gapCda", { pairLabel, surfaceGapNm: formattedSurfaceGapNm }),
+            message("validation.gapCda", {
+              leftIndex: left + 1,
+              rightIndex: right + 1,
+              surfaceGapNm: formattedSurfaceGapNm,
+            }),
           );
         }
       }
@@ -153,10 +169,10 @@ window.PlasmonInputForm = (() => {
     const target = document.getElementById("geometry-validation");
     target.classList.remove("has-error", "has-warning");
     if (result.errors.length > 0) {
-      target.textContent = result.errors.join(" ");
+      target.textContent = result.errors.map(messageText).join(" ");
       target.classList.add("has-error");
     } else if (result.warnings.length > 0) {
-      target.textContent = result.warnings.join(" ");
+      target.textContent = result.warnings.map(messageText).join(" ");
       target.classList.add("has-warning");
     } else {
       target.textContent = t("validation.valid");
@@ -432,15 +448,20 @@ window.PlasmonInputForm = (() => {
   }
 
   function clearPresetError(preset) {
+    presetErrors.delete(preset);
+    renderPresetError(preset);
+  }
+
+  function renderPresetError(preset) {
     const target = document.getElementById(`${preset}-preset-error`);
-    target.textContent = "";
-    target.hidden = true;
+    const error = presetErrors.get(preset);
+    target.textContent = error ? window.PlasmonI18n.errorMessage(error) : "";
+    target.hidden = !error;
   }
 
   function showPresetError(preset, error) {
-    const target = document.getElementById(`${preset}-preset-error`);
-    target.textContent = error.message;
-    target.hidden = false;
+    presetErrors.set(preset, error);
+    renderPresetError(preset);
   }
 
   async function normalizePresetParticles(nextParticles) {
@@ -494,7 +515,7 @@ window.PlasmonInputForm = (() => {
         Number.isFinite(maximumSurfaceGapNm) &&
         maximumSurfaceGapNm < minimumSurfaceGapNm
       ) {
-        throw new Error(t("validation.randomGapRange"));
+        throw window.PlasmonI18n.createLocalizedError("validation.randomGapRange");
       }
       const response = await window.PlasmonApi.generateRandomCluster({
         particle_count: numberValue("random-particle-count"),
@@ -534,7 +555,9 @@ window.PlasmonInputForm = (() => {
     const validation = validateParticles(candidateParticles);
     renderValidation();
     if (validation.errors.length > 0) {
-      throw new Error(validation.errors.join(" "));
+      const error = new Error("invalid particle layout");
+      error.translationDescriptors = validation.errors;
+      throw error;
     }
     const mediumPreset = document.getElementById("medium-preset").value;
     const polarizationChoice = document.getElementById("polarization").value;
@@ -545,7 +568,9 @@ window.PlasmonInputForm = (() => {
     if (
       ![startWavelengthNm, endWavelengthNm, stepNm, refractiveIndex].every(Number.isFinite)
     ) {
-      throw new Error(t("validation.wavelengthMediumRequired"));
+      throw window.PlasmonI18n.createLocalizedError(
+        "validation.wavelengthMediumRequired",
+      );
     }
     const polarization = polarizationChoice === "x" ? [1, 0, 0] : [0, 1, 0];
     return {
@@ -610,6 +635,7 @@ window.PlasmonInputForm = (() => {
       if (particles.length > 0) {
         renderParticleRows();
       }
+      presetErrors.forEach((_, preset) => renderPresetError(preset));
     });
     initializeTabs();
     updateMediumInput();

@@ -121,6 +121,25 @@ class ResultProvenance(BaseModel):
     software_version: str = Field(min_length=1)
 
 
+class ResultWarning(BaseModel):
+    """結果表示用の機械可読な注意情報。
+
+    表示文字列をAPIから返さず、UIが ``code`` と数値 ``parameters`` を
+    現在の言語の翻訳カタログで描画する。これにより、計算済み結果も
+    言語切替後に再翻訳できる。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: Literal[
+        "cda_gap_limitation",
+        "qcm_applied",
+        "qcm_classical_limit",
+        "qcm_validation_override",
+    ]
+    parameters: dict[str, float | int] = Field(default_factory=dict)
+
+
 class SimulationResult(BaseModel):
     """サーバーに保存せず ``POST /simulate`` が返す計算結果。"""
 
@@ -131,4 +150,4 @@ class SimulationResult(BaseModel):
     spectrum: SpectrumResult
     qcm_metadata: QcmResultMetadata
     provenance: ResultProvenance
-    warnings: list[str]
+    warnings: list[ResultWarning]

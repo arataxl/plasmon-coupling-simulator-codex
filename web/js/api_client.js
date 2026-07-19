@@ -10,81 +10,88 @@ window.PlasmonApi = (() => {
     simulation_job_not_found: "api.jobNotFound",
   });
 
-  function t(key, parameters) {
-    return window.PlasmonI18n.t(key, parameters);
+  function errorForCode(errorCode, fallbackKey, parameters = {}) {
+    return window.PlasmonI18n.createLocalizedError(
+      errorMessageKeyByCode[errorCode] ?? fallbackKey,
+      parameters,
+    );
   }
 
-  function messageForErrorCode(errorCode, fallbackMessage) {
-    const translationKey = errorMessageKeyByCode[errorCode];
-    return translationKey ? t(translationKey) : fallbackMessage;
-  }
-
-  async function parseResponse(response, fallbackMessage) {
+  async function parseResponse(response, fallbackKey) {
     let body;
     try {
       body = await response.json();
     } catch {
       if (!response.ok) {
-        throw new Error(fallbackMessage);
+        throw errorForCode(undefined, fallbackKey);
       }
       return {};
     }
     if (!response.ok) {
       const errorCode = body.error?.code ?? body.detail?.code;
-      throw new Error(messageForErrorCode(errorCode, fallbackMessage));
+      const parameters = body.error?.parameters ?? body.detail?.parameters ?? {};
+      throw errorForCode(errorCode, fallbackKey, parameters);
     }
     return body;
   }
 
+  async function request(url, options) {
+    try {
+      return await fetch(url, options);
+    } catch {
+      throw window.PlasmonI18n.createLocalizedError("api.networkFailed");
+    }
+  }
+
   async function simulate(payload) {
-    const response = await fetch("/simulate", {
+    const response = await request("/simulate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    return parseResponse(response, t("api.simulateFailed"));
+    return parseResponse(response, "api.simulateFailed");
   }
 
   async function startSimulationJob(payload) {
-    const response = await fetch("/simulate/jobs", {
+    const response = await request("/simulate/jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    return parseResponse(response, t("api.jobStartFailed"));
+    return parseResponse(response, "api.jobStartFailed");
   }
 
   async function cancelSimulationJob(jobId) {
-    const response = await fetch(`/simulate/jobs/${encodeURIComponent(jobId)}/cancel`, {
+    const response = await request(`/simulate/jobs/${encodeURIComponent(jobId)}/cancel`, {
       method: "POST",
     });
-    return parseResponse(response, t("api.cancelFailed"));
+    return parseResponse(response, "api.cancelFailed");
   }
 
   async function generateRandomCluster(payload) {
-    const response = await fetch("/layouts/random-cluster", {
+    const response = await request("/layouts/random-cluster", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    return parseResponse(response, t("api.randomFailed"));
+    return parseResponse(response, "api.randomFailed");
   }
 
   async function roundLayoutForDisplay(particles) {
-    const response = await fetch("/layouts/round-for-display", {
+    const response = await request("/layouts/round-for-display", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ particles }),
     });
-    return parseResponse(response, t("api.roundFailed"));
+    return parseResponse(response, "api.roundFailed");
   }
 
   return {
     simulate,
     startSimulationJob,
     cancelSimulationJob,
+    errorForCode,
     generateRandomCluster,
-    messageForErrorCode,
     roundLayoutForDisplay,
   };
 })();

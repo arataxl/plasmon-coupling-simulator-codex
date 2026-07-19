@@ -30,6 +30,10 @@ def test_japanese_and_english_translation_catalogues_have_matching_keys() -> Non
         "qcm.scopeTooltip",
         "result.qcmStatus",
         "warning.nirCdaLimit",
+        "warning.cdaGapLimitation",
+        "warning.qcmApplied",
+        "warning.qcmClassicalLimit",
+        "warning.qcmValidationOverride",
         "actions.calculate",
         "actions.cancel",
         "preset.maximumSurfaceGap",
@@ -97,7 +101,7 @@ def test_random_cluster_form_and_request_include_a_maximum_surface_gap() -> None
     assert 'data-i18n="preset.maximumSurfaceGap"' in index
     assert 'data-i18n="preset.randomGapHelp"' in index
     assert 'maximum_surface_gap_nm: maximumSurfaceGapNm' in input_form
-    assert 't("validation.randomGapRange")' in input_form
+    assert 'createLocalizedError("validation.randomGapRange")' in input_form
 
 
 def test_preset_errors_are_rendered_directly_below_their_own_actions() -> None:
@@ -121,6 +125,25 @@ def test_client_uses_i18n_messages_for_structured_backend_errors() -> None:
     assert 'preset_layout_invalid: "api.presetLayoutInvalid"' in api_client
     assert "body.error?.message" not in api_client
     assert "data.message" not in progress
+
+
+def test_existing_results_errors_and_progress_are_retranslated_after_language_switch() -> None:
+    """構造化警告と表示中の状態は、言語切替後に翻訳カタログから描画し直す。"""
+    api_client = (WEB_ROOT / "js" / "api_client.js").read_text(encoding="utf-8")
+    app = (WEB_ROOT / "js" / "app.js").read_text(encoding="utf-8")
+    i18n = (WEB_ROOT / "js" / "i18n.js").read_text(encoding="utf-8")
+    input_form = (WEB_ROOT / "js" / "input_form.js").read_text(encoding="utf-8")
+    results = (WEB_ROOT / "js" / "results.js").read_text(encoding="utf-8")
+
+    assert "errorForCode," in api_client
+    assert "createLocalizedError" in i18n
+    assert "errorMessage" in i18n
+    assert "currentError" in app
+    assert "progressStatus" in app
+    assert 'window.addEventListener("plasmonlanguagechange"' in app
+    assert "translationDescriptors" in input_form
+    assert "warningTranslationKeyByCode" in results
+    assert 'window.addEventListener("plasmonlanguagechange"' in results
 
 
 def test_preview_uses_a_dedicated_panel_with_minimum_display_area() -> None:

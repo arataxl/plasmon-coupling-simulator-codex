@@ -15,6 +15,25 @@ window.PlasmonI18n = (() => {
     return interpolate(messages[key], parameters);
   }
 
+  function createLocalizedError(key, parameters = {}) {
+    const error = new Error(t(key, parameters));
+    error.translationKey = key;
+    error.translationParameters = parameters;
+    return error;
+  }
+
+  function errorMessage(error) {
+    if (error?.translationKey) {
+      return t(error.translationKey, error.translationParameters);
+    }
+    if (Array.isArray(error?.translationDescriptors)) {
+      return error.translationDescriptors
+        .map((descriptor) => t(descriptor.key, descriptor.parameters))
+        .join(" ");
+    }
+    return error instanceof Error ? error.message : t("api.unknownError");
+  }
+
   function applyTranslations(root = document) {
     if (!messages) {
       return;
@@ -76,5 +95,13 @@ window.PlasmonI18n = (() => {
     });
   }
 
-  return { applyTranslations, getLanguage: () => currentLanguage, initialize, setLanguage, t };
+  return {
+    applyTranslations,
+    createLocalizedError,
+    errorMessage,
+    getLanguage: () => currentLanguage,
+    initialize,
+    setLanguage,
+    t,
+  };
 })();

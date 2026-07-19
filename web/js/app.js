@@ -8,6 +8,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   const progressMessage = document.getElementById("progress-message");
   const errorMessage = document.getElementById("error-message");
   const t = (key, parameters) => window.PlasmonI18n.t(key, parameters);
+  let currentError = null;
+  let progressStatus = null;
 
   function setRunning(isRunning) {
     submitButton.disabled = isRunning;
@@ -15,28 +17,48 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   function showError(error) {
-    errorMessage.textContent = error.message;
+    currentError = error;
+    errorMessage.textContent = window.PlasmonI18n.errorMessage(error);
     errorMessage.hidden = false;
+  }
+
+  function clearError() {
+    currentError = null;
+    errorMessage.textContent = "";
+    errorMessage.hidden = true;
+  }
+
+  function setProgress(key, parameters = {}) {
+    progressStatus = { key, parameters };
+    progressMessage.textContent = t(key, parameters);
   }
 
   window.PlasmonInputForm.initialize();
   window.PlasmonResults.initialize();
   setRunning(false);
+  window.addEventListener("plasmonlanguagechange", () => {
+    if (currentError) {
+      errorMessage.textContent = window.PlasmonI18n.errorMessage(currentError);
+    }
+    if (progressStatus) {
+      progressMessage.textContent = t(progressStatus.key, progressStatus.parameters);
+    }
+  });
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    errorMessage.hidden = true;
+    clearError();
     try {
       const payload = window.PlasmonInputForm.buildPayload();
       setRunning(true);
       progressBar.max = 1;
       progressBar.value = 0;
-      progressMessage.textContent = t("progress.starting");
+      setProgress("progress.starting");
       await window.PlasmonProgress.start(payload, {
         onProgress(progress) {
           progressBar.max = progress.total_points;
           progressBar.value = progress.completed_points;
-          progressMessage.textContent = t("progress.running", {
+          setProgress("progress.running", {
             completedPoints: progress.completed_points,
             totalPoints: progress.total_points,
           });
@@ -44,33 +66,33 @@ document.addEventListener("DOMContentLoaded", async () => {
         onComplete(result) {
           progressBar.value = progressBar.max;
           window.PlasmonResults.renderResult(result);
-          progressMessage.textContent = t("progress.complete");
+          setProgress("progress.complete");
           setRunning(false);
         },
         onCancelled() {
-          progressMessage.textContent = t("progress.cancelled");
+          setProgress("progress.cancelled");
           setRunning(false);
         },
         onError(error) {
           showError(error);
-          progressMessage.textContent = t("progress.failed");
+          setProgress("progress.failed");
           setRunning(false);
         },
       });
     } catch (error) {
       showError(error);
-      progressMessage.textContent = t("progress.startFailed");
+      setProgress("progress.startFailed");
       setRunning(false);
     }
   });
 
   cancelButton.addEventListener("click", async () => {
     cancelButton.disabled = true;
-    progressMessage.textContent = t("progress.cancelling");
+    setProgress("progress.cancelling");
     try {
       const accepted = await window.PlasmonProgress.cancel();
       if (!accepted) {
-        progressMessage.textContent = t("progress.alreadyComplete");
+        setProgress("progress.alreadyComplete");
       }
     } catch (error) {
       showError(error);

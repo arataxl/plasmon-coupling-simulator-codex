@@ -19,11 +19,11 @@ def _error_response(
     *,
     status_code: int,
     code: str,
-    message: str,
+    parameters: dict[str, float | int] | None = None,
     details: object | None = None,
 ) -> JSONResponse:
-    """全APIエラーで共通のJSON構造を返す。"""
-    error: dict[str, object] = {"code": code, "message": message}
+    """全APIエラーで翻訳可能な機械可読構造を返す。"""
+    error: dict[str, object] = {"code": code, "parameters": parameters or {}}
     if details is not None:
         error["details"] = details
     return JSONResponse(status_code=status_code, content={"error": error})
@@ -41,7 +41,6 @@ def register_error_handlers(app: FastAPI) -> None:
         return _error_response(
             status_code=422,
             code="invalid_input",
-            message="入力値を確認してください。",
             details=jsonable_encoder(error.errors()),
         )
 
@@ -54,7 +53,7 @@ def register_error_handlers(app: FastAPI) -> None:
         return _error_response(
             status_code=error.status_code,
             code=error.error_code,
-            message=str(error),
+            parameters=error.parameters,
         )
 
     @app.exception_handler(SimulationServiceError)
@@ -66,7 +65,7 @@ def register_error_handlers(app: FastAPI) -> None:
         return _error_response(
             status_code=error.status_code,
             code=error.error_code,
-            message=str(error),
+            parameters=error.parameters,
         )
 
     @app.exception_handler(MaterialDataError)
@@ -78,7 +77,6 @@ def register_error_handlers(app: FastAPI) -> None:
         return _error_response(
             status_code=503,
             code="material_data_unavailable",
-            message=str(error),
         )
 
     @app.exception_handler(QcmParameterError)
@@ -90,5 +88,4 @@ def register_error_handlers(app: FastAPI) -> None:
         return _error_response(
             status_code=503,
             code="qcm_parameter_table_unavailable",
-            message=str(error),
         )

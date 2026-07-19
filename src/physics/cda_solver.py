@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import math
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -56,8 +56,27 @@ QCM_REQUIRED_BELOW_GAP_M = 1.0e-9
 CDA_WARNING_UP_TO_GAP_M = 5.0e-9
 DEFAULT_MAX_CONDITION_NUMBER = 1.0e10
 
+WARNING_CDA_GAP_LIMITATION = "cda_gap_limitation"
+WARNING_QCM_APPLIED = "qcm_applied"
+WARNING_QCM_CLASSICAL_LIMIT = "qcm_classical_limit"
+WARNING_QCM_VALIDATION_OVERRIDE = "qcm_validation_override"
+
 FloatArray = NDArray[np.float64]
 ComplexArray = NDArray[np.complex128]
+
+
+@dataclass(frozen=True)
+class CdaWarning:
+    """UI/APIで翻訳するための、CDA計算層の構造化された注意情報。
+
+    ``code`` は表示文言ではなく安定した機械可読識別子であり、
+    ``parameters`` には表示に必要な数値だけを SI 境界外の単位で格納する。
+    物理計算層は自然言語の表示責務を持たず、API/UI 層で現在の表示言語へ
+    変換する。
+    """
+
+    code: str
+    parameters: dict[str, float | int] = field(default_factory=dict)
 
 
 class CdaError(RuntimeError):
@@ -113,7 +132,7 @@ class CdaSolution:
     interaction_polarizabilities_si: ComplexArray
     condition_number: float
     relative_residual: float
-    warnings: tuple[str, ...]
+    warnings: tuple[CdaWarning, ...]
     qcm_applied: bool
     qcm_layer_count: int | None
     qcm_plasma_energy_ev: float | None
@@ -141,7 +160,7 @@ class CdaSpectrum:
     c_sca_m2: FloatArray
     c_abs_m2: FloatArray
     condition_numbers: FloatArray
-    warnings: tuple[str, ...]
+    warnings: tuple[CdaWarning, ...]
     qcm_applied: bool
     qcm_plasma_energy_ev: float | None
     qcm_bulk_damping_energy_ev: float | None
@@ -198,7 +217,7 @@ def _gap_tolerance_m(center_distance_m: float, diameters_m: FloatArray) -> float
 
 def _validate_surface_gaps(
     *, positions_m: FloatArray, diameters_m: FloatArray
-) -> tuple[tuple[str, ...], tuple[_QcmPairGeometry, ...]]:
+) -> tuple[tuple[CdaWarning, ...], tuple[_QcmPairGeometry, ...]]:
     """重なりを拒否し、QCM対象対と1--5 nmのCDA警告を返す。"""
     minimum_warning_gap_m: float | None = None
     qcm_pairs: list[_QcmPairGeometry] = []
@@ -228,7 +247,13 @@ def _validate_surface_gaps(
                         surface_gap_m=surface_gap_m,
                     )
                 )
-            if surface_gap_m <= CDA_WARNING_UP_TO_GAP_M + tolerance_m:
+            # QCMが自動適用される領域は、1--5 nm の古典CDA警告ではなく
+            # QCMの適用状況として報告する。境界近傍の丸め誤差は、既存の
+            # QCM選択判定と同じ許容幅で通常CDA側へ分類する。
+            if (
+                surface_gap_m >= QCM_REQUIRED_BELOW_GAP_M - tolerance_m
+                and surface_gap_m <= CDA_WARNING_UP_TO_GAP_M + tolerance_m
+            ):
                 if (
                     minimum_warning_gap_m is None
                     or surface_gap_m < minimum_warning_gap_m
@@ -239,9 +264,10 @@ def _validate_surface_gaps(
         return (), tuple(qcm_pairs)
     return (
         (
-            "CDA approximation warning: at least one surface gap is within the "
-            "1--5 nm warning range "
-            f"(minimum {minimum_warning_gap_m / 1e-9:.6g} nm).",
+            CdaWarning(
+                code=WARNING_CDA_GAP_LIMITATION,
+                parameters={"minimum_gap_nm": minimum_warning_gap_m / 1e-9},
+            ),
         ),
         tuple(qcm_pairs),
     )
@@ -277,7 +303,7 @@ def _build_qcm_auxiliary_dipoles(
     int,
     int,
     float | None,
-    tuple[str, ...],
+    tuple[CdaWarning, ...],
 ]:
     """QCM対象対の環状層を、CDA連立方程式に加える補助双極子へ変換する。
 
@@ -298,8 +324,10 @@ def _build_qcm_auxiliary_dipoles(
             0,
             None,
             (
-                "QCM was disabled by the validation-only solver override for a "
-                "0.5--1 nm surface gap.",
+                CdaWarning(
+                    code=WARNING_QCM_VALIDATION_OVERRIDE,
+                    parameters={"pair_count": len(qcm_pairs)},
+                ),
             ),
         )
     if qcm_parameter_table is None:
@@ -349,8 +377,12 @@ def _build_qcm_auxiliary_dipoles(
             classical_limit_pair_count,
             0.0,
             (
-                "QCM was automatically selected, but every close pair is above the "
-                "digitized gamma_g range and therefore uses the classical limit.",
+                CdaWarning(
+                    code=WARNING_QCM_CLASSICAL_LIMIT,
+                    parameters={
+                        "classical_limit_pair_count": classical_limit_pair_count,
+                    },
+                ),
             ),
         )
     return (
@@ -360,10 +392,28 @@ def _build_qcm_auxiliary_dipoles(
         len(bridge_positions),
         classical_limit_pair_count,
         maximum_contrast,
-        (
-            "QCM applied with "
-            f"{qcm_layer_count} concentric-shell quadrature layers and "
-            f"{len(bridge_positions)} auxiliary bridge dipole(s).",
+        tuple(
+            [
+                CdaWarning(
+                    code=WARNING_QCM_APPLIED,
+                    parameters={
+                        "layer_count": qcm_layer_count,
+                        "bridge_count": len(bridge_positions),
+                    },
+                )
+            ]
+            + (
+                [
+                    CdaWarning(
+                        code=WARNING_QCM_CLASSICAL_LIMIT,
+                        parameters={
+                            "classical_limit_pair_count": classical_limit_pair_count,
+                        },
+                    )
+                ]
+                if classical_limit_pair_count > 0
+                else []
+            )
         ),
     )
 
@@ -707,7 +757,7 @@ def calculate_cda_spectrum(
     c_sca_m2 = np.empty_like(wavelengths)
     c_abs_m2 = np.empty_like(wavelengths)
     condition_numbers = np.empty_like(wavelengths)
-    geometry_warnings: tuple[str, ...] | None = None
+    geometry_warnings: tuple[CdaWarning, ...] | None = None
     qcm_applied: bool | None = None
     qcm_bridge_count: int | None = None
     qcm_classical_limit_pair_count: int | None = None

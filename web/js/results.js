@@ -156,17 +156,34 @@ window.PlasmonResults = (() => {
     return { ...conditions, filename_stem: filenameStem };
   }
 
+  const warningTranslationKeyByCode = Object.freeze({
+    cda_gap_limitation: "warning.cdaGapLimitation",
+    qcm_applied: "warning.qcmApplied",
+    qcm_classical_limit: "warning.qcmClassicalLimit",
+    qcm_validation_override: "warning.qcmValidationOverride",
+  });
+
+  function warningText(warning) {
+    const parameters = warning?.parameters ?? {};
+    const translationKey = warningTranslationKeyByCode[warning?.code];
+    if (!translationKey) {
+      return t("warning.unknown");
+    }
+    return t(translationKey, {
+      minimumGapNm: formatNumber(Number(parameters.minimum_gap_nm), 3),
+      layerCount: parameters.layer_count,
+      bridgeCount: parameters.bridge_count,
+      classicalLimitPairCount: parameters.classical_limit_pair_count,
+      pairCount: parameters.pair_count,
+    });
+  }
+
   function renderWarnings(warnings, qcmApplied) {
     const warningList = document.getElementById("warning-list");
     warningList.replaceChildren();
-    const displayWarnings = [...warnings];
+    const displayWarnings = (warnings ?? []).map(warningText);
     if (qcmApplied) {
-      const nearInfraredCaveat = t("warning.nirCdaLimit");
-      if (displayWarnings.length > 0) {
-        displayWarnings[0] = `${displayWarnings[0]} ${nearInfraredCaveat}`;
-      } else {
-        displayWarnings.push(nearInfraredCaveat);
-      }
+      displayWarnings.push(t("warning.nirCdaLimit"));
     }
     displayWarnings.forEach((warning) => {
       const item = document.createElement("li");

@@ -43,7 +43,7 @@ async def stream_simulation_progress(
     except SimulationJobNotFoundError as error:
         raise HTTPException(
             status_code=404,
-            detail={"code": "simulation_job_not_found"},
+            detail={"code": "simulation_job_not_found", "parameters": {}},
         ) from error
 
     async def event_stream() -> AsyncIterator[str]:

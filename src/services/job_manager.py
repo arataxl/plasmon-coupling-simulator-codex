@@ -186,7 +186,7 @@ class SimulationJobManager:
                     data={
                         "job_id": job.job_id,
                         "code": error.error_code,
-                        "message": str(error),
+                        "parameters": error.parameters,
                     },
                 ),
             )
@@ -199,7 +199,7 @@ class SimulationJobManager:
                     data={
                         "job_id": job.job_id,
                         "code": "simulation_failed",
-                        "message": "計算中に予期しないエラーが発生しました。",
+                        "parameters": {},
                     },
                 ),
             )

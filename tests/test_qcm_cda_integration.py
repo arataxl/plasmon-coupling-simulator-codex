@@ -10,6 +10,9 @@ from pydantic import ValidationError
 
 from src.io.qcm_parameter_table import load_gamma_g_au_digitized
 from src.physics.cda_solver import (
+    WARNING_CDA_GAP_LIMITATION,
+    WARNING_QCM_APPLIED,
+    WARNING_QCM_CLASSICAL_LIMIT,
     CdaConfigurationError,
     CdaCrossSections,
     CdaSolution,
@@ -104,9 +107,16 @@ def test_qcm_auto_application_is_finite_for_subnanometre_gaps(
         assert solution.qcm_classical_limit_pair_count == 0
         assert solution.qcm_max_relative_permittivity_contrast is not None
         assert solution.qcm_max_relative_permittivity_contrast > 0.0
+        assert {warning.code for warning in solution.warnings} == {WARNING_QCM_APPLIED}
     else:
         assert solution.qcm_bridge_count == 0
         assert solution.qcm_classical_limit_pair_count == 1
+        assert {warning.code for warning in solution.warnings} == {
+            WARNING_QCM_CLASSICAL_LIMIT
+        }
+    assert WARNING_CDA_GAP_LIMITATION not in {
+        warning.code for warning in solution.warnings
+    }
 
 
 @pytest.mark.parametrize("gap_nm", (0.5, 0.7, 0.9))

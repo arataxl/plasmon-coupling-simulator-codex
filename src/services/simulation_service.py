@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 
 import numpy as np
 from pydantic import ValidationError
@@ -17,6 +17,7 @@ from src.physics.cda_solver import (
     calculate_cda_cross_sections,
     calculate_cda_spectrum,
     solve_cda,
+    CdaWarning,
 )
 from src.physics.material_data import MaterialDataError, OpticalConstants
 from src.physics.qcm import GammaGParameterTable, QcmParameterError
@@ -24,6 +25,7 @@ from src.schemas.result import (
     CrossSectionsResult,
     QcmResultMetadata,
     ResultProvenance,
+    ResultWarning,
     SimulationResult,
     SpectrumResult,
 )
@@ -58,6 +60,15 @@ class SimulationServiceError(RuntimeError):
     status_code = 422
     error_code = "simulation_failed"
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        parameters: Mapping[str, float | int] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.parameters = dict(parameters or {})
+
 
 class QcmMetadataUnavailableError(SimulationServiceError):
     """QCM結果へ必須の出典情報を付与できないことを示す。"""
@@ -90,7 +101,11 @@ def validate_spectrum_point_limit(
     if point_count > maximum_points:
         raise SimulationServiceError(
             f"spectrum range exceeds the {endpoint_name} limit of "
-            f"{maximum_points} points; increase step_nm or narrow the range"
+            f"{maximum_points} points; increase step_nm or narrow the range",
+            parameters={
+                "maximum_points": maximum_points,
+                "requested_points": point_count,
+            },
         )
 
 
@@ -228,7 +243,7 @@ def _build_simulation_result(
     c_ext_m2: np.ndarray,
     c_sca_m2: np.ndarray,
     c_abs_m2: np.ndarray,
-    warnings: tuple[str, ...],
+    warnings: tuple[CdaWarning, ...],
     spectrum_qcm_applied: bool,
 ) -> SimulationResult:
     """同期・ストリーミング計算で共通の再現可能な結果を組み立てる。"""
@@ -263,7 +278,10 @@ def _build_simulation_result(
             material_data_interpolation=MATERIAL_DATA_INTERPOLATION,
             software_version=SOFTWARE_VERSION,
         ),
-        warnings=list(warnings),
+        warnings=[
+            ResultWarning(code=warning.code, parameters=warning.parameters)
+            for warning in warnings
+        ],
     )
 
 
@@ -374,7 +392,7 @@ def run_simulation_with_progress(
     c_ext_m2 = np.empty(total_points, dtype=np.float64)
     c_sca_m2 = np.empty(total_points, dtype=np.float64)
     c_abs_m2 = np.empty(total_points, dtype=np.float64)
-    warnings: tuple[str, ...] | None = None
+    warnings: tuple[CdaWarning, ...] | None = None
     qcm_applied: bool | None = None
 
     try:
