@@ -33,8 +33,10 @@
 | 直径 `40〜100 nm` | 高次多極子の影響について警告する。 | 定性的・半定量的な探索用。 |
 
 Kreibig型サイズ補正は既定でOFFです。有効時に517 nm未満を含む計算窓では、
-帯間遷移との分離近似に関する警告を表示します。Au光学定数はJohnson and Christy (1972)を
-用い、データ範囲外へ原則として外挿しません。
+帯間遷移との分離近似に関する警告を表示します。Esteban et al. (2012) にある
+Au jellium・大波長域向けのDrude値は、Johnson and Christy (1972) の実測バルク
+`n + ik` を基にするKreibig補正には転用しません。Au光学定数はJohnson and Christy
+(1972)を用い、データ範囲外へ原則として外挿しません。
 
 QCMの物理的根拠、暫定表の抽出方法、4層化の収束確認、限界は
 [docs/quantum_corrected_model_integration.md](docs/quantum_corrected_model_integration.md) を正とします。

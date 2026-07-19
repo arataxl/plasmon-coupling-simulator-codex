@@ -16,15 +16,26 @@ Quantum Corrected Model（QCM）を計算コアに統合する。
   Nature Communications 3, 825 (2012).
   DOI: 10.1038/ncomms1806
 
+原論文本文の「Quantum plasmonics in large metallic systems」節は、半径25 nmの
+Au球を `epsilon_inf = 1`、`hbar * omega_p = 7.9 eV`、
+`hbar * gamma_p = 0.09 eV` のDrudeモデルで記述する。この記述はAu jellium・
+大波長域向けで、2.0 eV以上で重要となる帯間遷移を含まない。これらは原論文の
+QCM例における材料設定として記録するものであり、Johnson and Christy (1972) の
+バルク `n + ik` を基にするFCDA/Kreibig補正のパラメータとして転用しない。
+本タスクではQCMの実装、QCM用パラメータ表の作成、既存CDAへの値の注入は行わない。
+
 ## QCM距離依存パラメータの情報源（D-2確定）
 
-- Esteban et al. (2012) のSupplementary Informationを確認した。Supplementary
-  Figure S1 はNa二量体について指数関数の接続点を変えた頑健性検証であり、
-  `l' = 11.76 a.u.`、`14.76 a.u.`、`5.46 a.u.` はいずれもNaの例である。
-  Supplementary Figure S2 もNa二量体のTDDFT/QCM比較である。
-- Supplementary Discussionは大型Au球とbowtie antennaでも同様の頑健性を
-  支持すると述べるが、Auに用いる指数関数の係数、Au向けのフィット手順、
-  または機械可読な数値表は示していない。Naの数値をAuへ流用してはならない。
+- Esteban et al. (2012) の公式Supplementary Information（Supplementary
+  Figures S1--S2およびSupplementary Discussion、全5ページ）を再確認した。
+  Supplementary Figure S1 はNa二量体について指数関数の接続点を変えた
+  頑健性検証であり、`l' = 11.76 a.u.`、`14.76 a.u.`、`5.46 a.u.` は
+  いずれもNaの例である。Supplementary Figure S2もNa二量体のTDDFT/QCM比較である。
+- Supplementary Discussionは大型Au球とbowtie antennaでも同様の頑健性を支持する
+  と述べるだけで、Auに用いる指数関数の係数、Au向けのフィット手順、数値表、
+  または生データは示していない。Naの数値をAuへ流用してはならない。
+- よって、Supplementary InformationにAuの `gamma_g(l)` 数値表またはFig. 2dを
+  再構成できる詳細なAu数値があるという根拠は確認できず、D-2の結論は変更しない。
 - よってMVPでは、**原論文Fig. 2dのAu jelliumに対応する青色の実線**を
   デジタイズした表を暫定参照表として採用する。青色の白丸（SSTM値）は
   表の値として採用せず、曲線読取りの補助情報としてのみ扱う。

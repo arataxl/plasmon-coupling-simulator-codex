@@ -53,3 +53,18 @@
    - 注意：本ツールでの適用範囲と距離しきい値は、原論文の数値を
      そのまま流用せず、`docs/physics_assumptions.md` と
      `docs/quantum_corrected_model_integration.md` の運用ルールに従う
+   - 一次資料確認：本文「Quantum plasmonics in large metallic systems」は、
+     Au jellium・大波長域向けの `epsilon_inf = 1`、
+     `hbar * omega_p = 7.9 eV`、`hbar * gamma_p = 0.09 eV` を記載する。
+     これは帯間遷移を含まないQCM例の設定であり、Johnson and Christy (1972) の
+     バルク `n + ik` を使うKreibig補正の値としては採用しない。
+   - Supplementary Information（Supplementary Figures S1--S2、
+     Supplementary Discussion）には、Auの `gamma_g(l)` 数値表、Au係数、
+     Au向けフィット手順は確認できない。
+
+7. 物理定数
+   - NIST, CODATA Recommended Values of the Fundamental Physical Constants:
+     2022, NIST SP 961 (2024).
+     https://physics.nist.gov/cuu/pdf/wall_2022.pdf
+   - 用途：`hbar = 6.582119569...e-16 eV s` を用いた、エネルギー表示の
+     Drudeパラメータから角周波数（rad/s）への変換。

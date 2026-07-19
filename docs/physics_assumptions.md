@@ -46,13 +46,26 @@ Extinction、Scattering、Absorption スペクトルの変化を高速に探索�
   分極率（FCDA）とする。
 - 5 nm付近の小粒子を考慮し、Kreibig型の緩和定数サイズ補正
   （A=1.0, v_F=1.4e6 m/s）を切替可能なオプション（デフォルトOFF）として実装する。
-- **Kreibig Drudeパラメータの確認状況**：Auの
-  `plasma_frequency_rad_s` と `bulk_damping_rad_s` は、Kreibig & Vollmer
-  (1995) および Johnson and Christy (1972) の本リポジトリで確認可能な
-  機械可読な一次資料から、単位・定義・フィット条件を含む一組の数値として確認できていない。
-  Kreibig補正は一次資料の数値確認待ちのため、MVPでは既定OFF・利用者による出典付き
-  手動入力のみとする。Johnson and Christyの `n + ik` 表から本リポジトリで独自に
-  フィットまたは推定して値を補わない。
+- **Kreibig Drudeパラメータの確認状況**：Esteban et al. (2012) の
+  「Quantum plasmonics in large metallic systems」節では、半径 25 nm の
+  Au球に対し、`epsilon_inf = 1`、エネルギー表示の
+  `hbar * omega_p = 7.9 eV`、`hbar * gamma_p = 0.09 eV` を用いる。
+  `hbar = 6.582119569...e-16 eV s`（NIST/CODATA 2022）により
+  `omega = E / hbar` と変換すると、
+  `omega_p = 1.20022...e16 rad/s`、`gamma_p = 1.36734...e14 rad/s`
+  となる。ただし、原値の有効桁を超える精度を主張しない。
+- **転用不可の理由**：上記は、原論文が明記する Au jellium・大波長域向けの
+  単独Drudeモデルであり、`epsilon_inf = 1`、2.0 eV以上で重要となる帯間遷移を
+  含まない。一方、本実装のKreibig補正はJohnson and Christy (1972) の実測
+  バルク `n + ik` から得る `epsilon_bulk` に対し、同じ誘電関数分解に属する
+  Drude成分だけを `gamma_bulk` から `gamma_R` へ置換する。このため、Esteban
+  et al. の `omega_p`・`gamma_p` を `plasma_frequency_rad_s`・
+  `bulk_damping_rad_s` として直接渡すと、異なる材料モデルを混在させることになる。
+  本プロジェクトではKreibig用パラメータとして採用しない。
+- よってKreibig補正はMVPで既定OFFを維持する。有効化は、Johnson and Christyの
+  誘電関数との分解・適用波長域の整合を出典で示せる値を、利用者が明示入力する場合に
+  限る。Johnson and Christyの `n + ik` 表から本リポジトリで独自にフィットまたは
+  推定して値を補わない。
 - 各波長で相互作用を含む複素線形方程式を解く
 - Mie理論は単一球の参照・検証用であり、
   Mie理論そのものをそのまま多粒子相互作用の解法として使用しない
