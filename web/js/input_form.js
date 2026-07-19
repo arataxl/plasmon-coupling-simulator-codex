@@ -3,11 +3,22 @@ window.PlasmonInputForm = (() => {
   const minimumDiameterNm = 2;
   const maximumDiameterNm = 100;
   const minimumGapNm = 0.5;
+  const defaultCameraEye = Object.freeze({ x: 1.9, y: 1.9, z: 1.45 });
+  const defaultCameraDistance = Math.hypot(
+    defaultCameraEye.x,
+    defaultCameraEye.y,
+    defaultCameraEye.z,
+  );
   const mediumPresets = {
     water: { name: "water", refractiveIndex: 1.33 },
     ethanol: { name: "ethanol", refractiveIndex: 1.361 },
   };
   let particles = [];
+  let previewState = null;
+
+  function t(key, parameters) {
+    return window.PlasmonI18n.t(key, parameters);
+  }
 
   function numberFromInput(input) {
     const value = input.value.trim();
@@ -52,22 +63,33 @@ window.PlasmonInputForm = (() => {
     const errors = [];
     const warnings = [];
     if (candidateParticles.length < 1 || candidateParticles.length > maximumParticleCount) {
-      errors.push(`粒子数は1〜${maximumParticleCount}個にしてください。`);
+      errors.push(t("validation.particleCount", { maximumParticleCount }));
       return { errors, warnings };
     }
     candidateParticles.forEach((particle, index) => {
-      const label = `粒子${index + 1}`;
+      const label = t("validation.particleLabel", { index: index + 1 });
       if (!Number.isFinite(particle.diameter_nm)) {
-        errors.push(`${label}の径を数値で入力してください。`);
+        errors.push(t("validation.diameterRequired", { label }));
       } else if (
         particle.diameter_nm < minimumDiameterNm ||
         particle.diameter_nm > maximumDiameterNm
       ) {
-        errors.push(`${label}の径は${minimumDiameterNm}〜${maximumDiameterNm} nmです。`);
+        errors.push(
+          t("validation.diameterRange", {
+            label,
+            minimumDiameterNm,
+            maximumDiameterNm,
+          }),
+        );
       }
       ["x_nm", "y_nm", "z_nm"].forEach((field) => {
         if (!Number.isFinite(particle[field])) {
-          errors.push(`${label}の${field.slice(0, 1)}座標を数値で入力してください。`);
+          errors.push(
+            t("validation.coordinateRequired", {
+              label,
+              axis: field.slice(0, 1),
+            }),
+          );
         }
       });
     });
@@ -84,33 +106,27 @@ window.PlasmonInputForm = (() => {
           first.z_nm - second.z_nm,
         );
         const surfaceGapNm = centerDistanceNm - (first.diameter_nm + second.diameter_nm) / 2;
-        const pairLabel = `粒子${left + 1}–${right + 1}`;
+        const pairLabel = t("validation.pairLabel", {
+          leftIndex: left + 1,
+          rightIndex: right + 1,
+        });
+        const formattedSurfaceGapNm = surfaceGapNm.toFixed(3);
         if (surfaceGapNm < minimumGapNm - 1e-12) {
-          errors.push(`${pairLabel}の表面間ギャップ ${surfaceGapNm.toFixed(3)} nm は0.5 nm未満です。`);
+          errors.push(
+            t("validation.gapBelow", { pairLabel, surfaceGapNm: formattedSurfaceGapNm }),
+          );
         } else if (surfaceGapNm < 1.0) {
-          warnings.push(`${pairLabel}: ${surfaceGapNm.toFixed(3)} nmのためQCMを自動適用します。`);
+          warnings.push(
+            t("validation.gapQcm", { pairLabel, surfaceGapNm: formattedSurfaceGapNm }),
+          );
         } else if (surfaceGapNm <= 5.0) {
-          warnings.push(`${pairLabel}: ${surfaceGapNm.toFixed(3)} nmはCDAの近似限界に注意してください。`);
+          warnings.push(
+            t("validation.gapCda", { pairLabel, surfaceGapNm: formattedSurfaceGapNm }),
+          );
         }
       }
     }
     return { errors, warnings };
-  }
-
-  function updateQcmInputStatus(validation) {
-    const target = document.getElementById("qcm-input-status");
-    if (!target) {
-      return;
-    }
-    if (validation.errors.length > 0) {
-      target.textContent = "配置を修正してからQCM適用範囲を確認してください。";
-      return;
-    }
-    if (validation.warnings.some((warning) => warning.includes("QCMを自動適用"))) {
-      target.textContent = "この配置ではQCMを自動適用します。ユーザーによる無効化はできません。";
-      return;
-    }
-    target.textContent = "この配置ではQCMは適用されません。0.5〜1.0 nm未満で自動適用されます。";
   }
 
   function renderValidation() {
@@ -124,9 +140,8 @@ window.PlasmonInputForm = (() => {
       target.textContent = result.warnings.join(" ");
       target.classList.add("has-warning");
     } else {
-      target.textContent = "配置は入力範囲内です。";
+      target.textContent = t("validation.valid");
     }
-    updateQcmInputStatus(result);
     return result;
   }
 
@@ -134,23 +149,124 @@ window.PlasmonInputForm = (() => {
     const minimum = Math.min(...values);
     const maximum = Math.max(...values);
     const span = Math.max(maximum - minimum, maximumDiameterNm, 1.0);
-    const padding = Math.max(span * 0.22, maximumDiameterNm * 0.65, 5.0);
+    const padding = Math.max(span * 0.35, maximumDiameterNm * 0.9, 8.0);
     return [minimum - padding, maximum + padding];
   }
 
+  function clamp(value, minimum, maximum) {
+    return Math.min(Math.max(value, minimum), maximum);
+  }
+
+  function cameraDistance(eye) {
+    if (!eye || ![eye.x, eye.y, eye.z].every(Number.isFinite)) {
+      return defaultCameraDistance;
+    }
+    return Math.hypot(eye.x, eye.y, eye.z);
+  }
+
+  function cameraEyeFromRelayout(relayoutData, graphElement) {
+    const camera = relayoutData["scene.camera"];
+    if (camera?.eye && [camera.eye.x, camera.eye.y, camera.eye.z].every(Number.isFinite)) {
+      return camera.eye;
+    }
+    const eventEye = {
+      x: relayoutData["scene.camera.eye.x"],
+      y: relayoutData["scene.camera.eye.y"],
+      z: relayoutData["scene.camera.eye.z"],
+    };
+    if ([eventEye.x, eventEye.y, eventEye.z].every(Number.isFinite)) {
+      return eventEye;
+    }
+    const layoutEye = graphElement.layout?.scene?.camera?.eye;
+    if (layoutEye && [layoutEye.x, layoutEye.y, layoutEye.z].every(Number.isFinite)) {
+      return layoutEye;
+    }
+    return defaultCameraEye;
+  }
+
+  function markerSizesForZoom(state, zoomScale) {
+    return state.baseMarkerSizes.map((size) => clamp(size * zoomScale, 10, 148));
+  }
+
+  function updatePreviewForCamera(relayoutData, graphElement) {
+    const cameraChanged = Object.keys(relayoutData).some(
+      (key) => key === "scene.camera" || key.startsWith("scene.camera.eye"),
+    );
+    if (!cameraChanged || !previewState || !window.Plotly) {
+      return;
+    }
+    const nextDistance = cameraDistance(cameraEyeFromRelayout(relayoutData, graphElement));
+    if (Math.abs(nextDistance - previewState.cameraDistance) < 1e-4) {
+      return;
+    }
+    previewState.cameraDistance = nextDistance;
+    const zoomScale = clamp(defaultCameraDistance / nextDistance, 0.58, 2.35);
+    const markerSizes = markerSizesForZoom(previewState, zoomScale);
+    const labelSize = Math.round(clamp(12 * Math.sqrt(zoomScale), 10, 18));
+    const tickFontSize = Math.round(clamp(10 * Math.sqrt(zoomScale), 9, 15));
+    const axisTitleFontSize = Math.round(clamp(12 * Math.sqrt(zoomScale), 10, 18));
+
+    void window.Plotly.restyle(
+      graphElement,
+      {
+        "marker.size": [markerSizes],
+        "textfont.size": [labelSize],
+      },
+      [0],
+    );
+    void window.Plotly.relayout(graphElement, {
+      "scene.xaxis.tickfont.size": tickFontSize,
+      "scene.yaxis.tickfont.size": tickFontSize,
+      "scene.zaxis.tickfont.size": tickFontSize,
+      "scene.xaxis.title.font.size": axisTitleFontSize,
+      "scene.yaxis.title.font.size": axisTitleFontSize,
+      "scene.zaxis.title.font.size": axisTitleFontSize,
+    });
+  }
+
+  function attachPreviewRelayoutHandler(graphElement) {
+    if (graphElement.__plasmonRelayoutHandler && typeof graphElement.removeListener === "function") {
+      graphElement.removeListener("plotly_relayout", graphElement.__plasmonRelayoutHandler);
+    }
+    graphElement.__plasmonRelayoutHandler = (relayoutData) => {
+      updatePreviewForCamera(relayoutData, graphElement);
+    };
+    if (typeof graphElement.on === "function") {
+      graphElement.on("plotly_relayout", graphElement.__plasmonRelayoutHandler);
+    }
+  }
+
   function renderPreview() {
+    const graphElement = document.getElementById("geometry-preview");
     const finiteParticles = readParticles().filter((particle) =>
       [particle.diameter_nm, particle.x_nm, particle.y_nm, particle.z_nm].every(Number.isFinite),
     );
-    if (!window.Plotly || finiteParticles.length === 0) {
+    if (!window.Plotly || !graphElement || finiteParticles.length === 0) {
+      previewState = null;
       return;
     }
     const maximumDiameter = Math.max(...finiteParticles.map((particle) => particle.diameter_nm));
     const xValues = finiteParticles.map((particle) => particle.x_nm);
     const yValues = finiteParticles.map((particle) => particle.y_nm);
     const zValues = finiteParticles.map((particle) => particle.z_nm);
-    window.Plotly.react(
-      "geometry-preview",
+    const xRange = axisRange(xValues, maximumDiameter);
+    const yRange = axisRange(yValues, maximumDiameter);
+    const zRange = axisRange(zValues, maximumDiameter);
+    const viewSpan = Math.max(
+      xRange[1] - xRange[0],
+      yRange[1] - yRange[0],
+      zRange[1] - zRange[0],
+    );
+    const baseMarkerSizes = finiteParticles.map((particle) =>
+      clamp((particle.diameter_nm / viewSpan) * 190, 10, 96),
+    );
+    previewState = {
+      baseMarkerSizes,
+      cameraDistance: defaultCameraDistance,
+    };
+
+    const plotPromise = window.Plotly.react(
+      graphElement,
       [
         {
           type: "scatter3d",
@@ -158,47 +274,45 @@ window.PlasmonInputForm = (() => {
           x: xValues,
           y: yValues,
           z: zValues,
-          text: finiteParticles.map((particle, index) => ` ${index + 1}`),
+          text: finiteParticles.map((_, index) => ` ${index + 1}`),
           customdata: finiteParticles.map((particle) => [particle.diameter_nm]),
           textposition: "top center",
           textfont: { color: "#17324d", size: 12 },
           marker: {
-            // scatter3d の marker.size は px。ズーム後も読める固定表示で相対径を示す。
-            size: finiteParticles.map((particle) => Math.max(12, (30 * particle.diameter_nm) / maximumDiameter)),
+            size: baseMarkerSizes,
             sizemode: "diameter",
             sizeref: 1,
-            sizemin: 12,
+            sizemin: 10,
             color: "#d69e2e",
             line: { color: "#6b4200", width: 1.5 },
             opacity: 0.9,
           },
-          hovertemplate:
-            "粒子 %{text}<br>径=%{customdata[0]:.1f} nm<br>x=%{x:.1f} nm<br>y=%{y:.1f} nm<br>z=%{z:.1f} nm<extra></extra>",
+          hovertemplate: t("preview.hover"),
         },
       ],
       {
-        margin: { t: 28, r: 28, b: 52, l: 56 },
+        margin: { t: 34, r: 32, b: 62, l: 64 },
         scene: {
           xaxis: {
-            title: { text: "x (nm)", font: { size: 12 } },
-            range: axisRange(xValues, maximumDiameter),
-            tickfont: { size: 11 },
+            title: { text: t("preview.xAxis"), font: { size: 12 } },
+            range: xRange,
+            tickfont: { size: 10 },
             nticks: 5,
             gridcolor: "#d6e2ef",
             backgroundcolor: "#f8fbff",
           },
           yaxis: {
-            title: { text: "y (nm)", font: { size: 12 } },
-            range: axisRange(yValues, maximumDiameter),
-            tickfont: { size: 11 },
+            title: { text: t("preview.yAxis"), font: { size: 12 } },
+            range: yRange,
+            tickfont: { size: 10 },
             nticks: 5,
             gridcolor: "#d6e2ef",
             backgroundcolor: "#f8fbff",
           },
           zaxis: {
-            title: { text: "z (nm)", font: { size: 12 } },
-            range: axisRange(zValues, maximumDiameter),
-            tickfont: { size: 11 },
+            title: { text: t("preview.zAxis"), font: { size: 12 } },
+            range: zRange,
+            tickfont: { size: 10 },
             nticks: 5,
             gridcolor: "#d6e2ef",
             backgroundcolor: "#f8fbff",
@@ -206,20 +320,35 @@ window.PlasmonInputForm = (() => {
           aspectmode: "data",
           dragmode: "orbit",
           camera: {
-            eye: { x: 1.7, y: 1.7, z: 1.35 },
+            eye: defaultCameraEye,
             up: { x: 0, y: 0, z: 1 },
-            projection: { type: "orthographic" },
+            projection: { type: "perspective" },
           },
         },
         paper_bgcolor: "#ffffff",
       },
       { responsive: true, displaylogo: false, scrollZoom: true },
     );
+    if (plotPromise && typeof plotPromise.then === "function") {
+      void plotPromise.then(() => attachPreviewRelayoutHandler(graphElement));
+    } else {
+      attachPreviewRelayoutHandler(graphElement);
+    }
   }
 
   function refreshGeometry() {
     renderValidation();
     renderPreview();
+  }
+
+  function particleFieldLabel(field) {
+    const keys = {
+      diameter_nm: "coordinates.diameter",
+      x_nm: "coordinates.x",
+      y_nm: "coordinates.y",
+      z_nm: "coordinates.z",
+    };
+    return t(keys[field]);
   }
 
   function makeParticleInput(value, field) {
@@ -228,7 +357,7 @@ window.PlasmonInputForm = (() => {
     input.step = "0.1";
     input.value = formatFormValue(value, field);
     input.dataset.field = field;
-    input.setAttribute("aria-label", field);
+    input.setAttribute("aria-label", particleFieldLabel(field));
     input.addEventListener("input", refreshGeometry);
     return input;
   }
@@ -251,7 +380,7 @@ window.PlasmonInputForm = (() => {
       const removeButton = document.createElement("button");
       removeButton.type = "button";
       removeButton.className = "compact-button";
-      removeButton.textContent = "削除";
+      removeButton.textContent = t("coordinates.remove");
       removeButton.disabled = particles.length === 1;
       removeButton.addEventListener("click", () => {
         particles = readParticles();
@@ -366,7 +495,7 @@ window.PlasmonInputForm = (() => {
     if (
       ![startWavelengthNm, endWavelengthNm, stepNm, refractiveIndex].every(Number.isFinite)
     ) {
-      throw new Error("波長範囲と媒質屈折率を数値で入力してください。");
+      throw new Error(t("validation.wavelengthMediumRequired"));
     }
     const polarization = polarizationChoice === "x" ? [1, 0, 0] : [0, 1, 0];
     return {
@@ -420,6 +549,12 @@ window.PlasmonInputForm = (() => {
       applyRandomCluster().catch(showPresetError);
     });
     document.getElementById("add-particle").addEventListener("click", addParticle);
+    window.addEventListener("plasmonlanguagechange", () => {
+      particles = readParticles();
+      if (particles.length > 0) {
+        renderParticleRows();
+      }
+    });
     initializeTabs();
     updateMediumInput();
     applyDimer().catch(showPresetError);

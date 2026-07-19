@@ -146,3 +146,33 @@ def test_qcm_gap_permittivity_returns_the_medium_in_the_classical_limit(
     assert result.classical_limit
     assert result.gamma_g_ev is None
     assert result.relative_permittivity == complex(medium_relative_permittivity)
+
+
+def test_qcm_gap_permittivity_has_the_expected_long_wavelength_drude_trend(
+    parameter_table: GammaGParameterTable,
+) -> None:
+    """固定gapではDrude損失項が長波長側で有限かつ増加することを確認する。
+
+    採用式 ``-omega_p^2 / [omega (omega + i gamma_g)]`` は、固定した
+    ``gamma_g`` に対して低周波側で虚部の大きさが増す。これは暫定デジタイズ
+    表やCDA全体の定量精度を検証するものではなく、UIで近赤外域のCDA限界を
+    注記する前提となるQCM局所誘電率関数の周波数依存だけを固定する試験である。
+    """
+    wavelengths_nm = (600.0, 900.0, 1200.0, 1500.0)
+    medium_relative_permittivity = 1.33**2
+    relative_permittivities = [
+        calculate_qcm_gap_permittivity(
+            separation_m=0.5e-9,
+            angular_frequency_rad_s=(
+                2.0 * math.pi * SPEED_OF_LIGHT_M_PER_S / (wavelength_nm * 1.0e-9)
+            ),
+            medium_relative_permittivity=medium_relative_permittivity,
+            parameter_table=parameter_table,
+        ).relative_permittivity
+        for wavelength_nm in wavelengths_nm
+    ]
+    imaginary_parts = np.imag(relative_permittivities)
+
+    assert np.all(np.isfinite(relative_permittivities))
+    assert np.all(imaginary_parts > 0.0)
+    assert np.all(np.diff(imaginary_parts) > 0.0)

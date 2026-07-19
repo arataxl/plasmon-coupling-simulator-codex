@@ -1,6 +1,10 @@
 window.PlasmonProgress = (() => {
   let activeJob = null;
 
+  function t(key, parameters) {
+    return window.PlasmonI18n.t(key, parameters);
+  }
+
   function closeActiveJob(jobId) {
     if (!activeJob || activeJob.jobId !== jobId) {
       return;
@@ -11,7 +15,7 @@ window.PlasmonProgress = (() => {
 
   async function start(payload, handlers) {
     if (activeJob) {
-      throw new Error("別の計算が実行中です。");
+      throw new Error(t("progress.anotherActive"));
     }
     const { job_id: jobId } = await window.PlasmonApi.startSimulationJob(payload);
     const source = new EventSource(`/simulate/stream/${encodeURIComponent(jobId)}`);
@@ -53,7 +57,7 @@ window.PlasmonProgress = (() => {
         return;
       }
       closeActiveJob(jobId);
-      handlers.onError(new Error("進捗ストリームとの接続が切れました。"));
+      handlers.onError(new Error(t("progress.streamDisconnected")));
     };
     return jobId;
   }

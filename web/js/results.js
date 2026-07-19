@@ -3,6 +3,10 @@ window.PlasmonResults = (() => {
   let latestResult = null;
   let latestDownloadMetadata = null;
 
+  function t(key, parameters) {
+    return window.PlasmonI18n.t(key, parameters);
+  }
+
   function downloadBlob(filename, content, type) {
     const blob = new Blob([content], { type });
     const url = URL.createObjectURL(blob);
@@ -152,10 +156,19 @@ window.PlasmonResults = (() => {
     return { ...conditions, filename_stem: filenameStem };
   }
 
-  function renderWarnings(warnings) {
+  function renderWarnings(warnings, qcmApplied) {
     const warningList = document.getElementById("warning-list");
     warningList.replaceChildren();
-    warnings.forEach((warning) => {
+    const displayWarnings = [...warnings];
+    if (qcmApplied) {
+      const nearInfraredCaveat = t("warning.nirCdaLimit");
+      if (displayWarnings.length > 0) {
+        displayWarnings[0] = `${displayWarnings[0]} ${nearInfraredCaveat}`;
+      } else {
+        displayWarnings.push(nearInfraredCaveat);
+      }
+    }
+    displayWarnings.forEach((warning) => {
       const item = document.createElement("li");
       item.textContent = warning;
       warningList.append(item);
@@ -163,7 +176,7 @@ window.PlasmonResults = (() => {
   }
 
   function setQcmDetail(id, value) {
-    document.getElementById(id).textContent = value ?? "未提供";
+    document.getElementById(id).textContent = value ?? t("result.missing");
   }
 
   function renderQcmNotice(metadata) {
@@ -183,9 +196,11 @@ window.PlasmonResults = (() => {
     setQcmDetail("qcm-detail-interpolation", metadata.qcm_interpolation);
   }
 
-  function renderResult(result) {
+  function renderResult(result, { preserveDownloadMetadata = false } = {}) {
     latestResult = result;
-    latestDownloadMetadata = buildDownloadMetadata(result);
+    if (!preserveDownloadMetadata || !latestDownloadMetadata) {
+      latestDownloadMetadata = buildDownloadMetadata(result);
+    }
     const spectrum = result.spectrum;
     const toSquareNanometres = (values) =>
       values.map((value) => value * squareNanometresPerSquareMetre);
@@ -217,8 +232,8 @@ window.PlasmonResults = (() => {
       traces,
       {
         margin: { t: 24, r: 20, b: 58, l: 72 },
-        xaxis: { title: "真空波長 (nm)" },
-        yaxis: { title: "断面積 (nm²)" },
+        xaxis: { title: t("result.xAxis") },
+        yaxis: { title: t("result.yAxis") },
         legend: { orientation: "h", y: 1.12 },
         paper_bgcolor: "#ffffff",
         plot_bgcolor: "#ffffff",
@@ -227,7 +242,7 @@ window.PlasmonResults = (() => {
     );
 
     renderQcmNotice(result.qcm_metadata);
-    renderWarnings(result.warnings);
+    renderWarnings(result.warnings, Boolean(result.qcm_metadata?.qcm_applied));
     document.getElementById("download-csv").disabled = false;
     document.getElementById("download-json").disabled = false;
   }
@@ -295,6 +310,11 @@ window.PlasmonResults = (() => {
   function initialize() {
     document.getElementById("download-csv").addEventListener("click", downloadCsv);
     document.getElementById("download-json").addEventListener("click", downloadJson);
+    window.addEventListener("plasmonlanguagechange", () => {
+      if (latestResult) {
+        renderResult(latestResult, { preserveDownloadMetadata: true });
+      }
+    });
   }
 
   return { initialize, renderResult };

@@ -1,10 +1,13 @@
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
+  await window.PlasmonI18n.initialize();
+
   const form = document.getElementById("simulation-form");
   const submitButton = document.getElementById("simulate-button");
   const cancelButton = document.getElementById("cancel-button");
   const progressBar = document.getElementById("simulation-progress");
   const progressMessage = document.getElementById("progress-message");
   const errorMessage = document.getElementById("error-message");
+  const t = (key, parameters) => window.PlasmonI18n.t(key, parameters);
 
   function setRunning(isRunning) {
     submitButton.disabled = isRunning;
@@ -28,43 +31,46 @@ document.addEventListener("DOMContentLoaded", () => {
       setRunning(true);
       progressBar.max = 1;
       progressBar.value = 0;
-      progressMessage.textContent = "計算ジョブを開始しています。";
+      progressMessage.textContent = t("progress.starting");
       await window.PlasmonProgress.start(payload, {
         onProgress(progress) {
           progressBar.max = progress.total_points;
           progressBar.value = progress.completed_points;
-          progressMessage.textContent = `計算中: ${progress.completed_points} / ${progress.total_points} 波長点`;
+          progressMessage.textContent = t("progress.running", {
+            completedPoints: progress.completed_points,
+            totalPoints: progress.total_points,
+          });
         },
         onComplete(result) {
           progressBar.value = progressBar.max;
           window.PlasmonResults.renderResult(result);
-          progressMessage.textContent = "計算が完了しました。";
+          progressMessage.textContent = t("progress.complete");
           setRunning(false);
         },
         onCancelled() {
-          progressMessage.textContent = "計算を取り消しました。部分結果は返却・保存していません。";
+          progressMessage.textContent = t("progress.cancelled");
           setRunning(false);
         },
         onError(error) {
           showError(error);
-          progressMessage.textContent = "計算を完了できませんでした。";
+          progressMessage.textContent = t("progress.failed");
           setRunning(false);
         },
       });
     } catch (error) {
       showError(error);
-      progressMessage.textContent = "計算を開始できませんでした。";
+      progressMessage.textContent = t("progress.startFailed");
       setRunning(false);
     }
   });
 
   cancelButton.addEventListener("click", async () => {
     cancelButton.disabled = true;
-    progressMessage.textContent = "取消を要求しました。現在の波長点が終わり次第、中断します。";
+    progressMessage.textContent = t("progress.cancelling");
     try {
       const accepted = await window.PlasmonProgress.cancel();
       if (!accepted) {
-        progressMessage.textContent = "計算はすでに完了しているため、取消できませんでした。";
+        progressMessage.textContent = t("progress.alreadyComplete");
       }
     } catch (error) {
       showError(error);

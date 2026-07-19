@@ -1,4 +1,8 @@
 window.PlasmonApi = (() => {
+  function t(key, parameters) {
+    return window.PlasmonI18n.t(key, parameters);
+  }
+
   async function parseResponse(response, fallbackMessage) {
     const body = await response.json();
     if (!response.ok) {
@@ -14,7 +18,7 @@ window.PlasmonApi = (() => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    return parseResponse(response, "計算リクエストに失敗しました。");
+    return parseResponse(response, t("api.simulateFailed"));
   }
 
   async function startSimulationJob(payload) {
@@ -23,14 +27,14 @@ window.PlasmonApi = (() => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    return parseResponse(response, "進捗付き計算を開始できませんでした。");
+    return parseResponse(response, t("api.jobStartFailed"));
   }
 
   async function cancelSimulationJob(jobId) {
     const response = await fetch(`/simulate/jobs/${encodeURIComponent(jobId)}/cancel`, {
       method: "POST",
     });
-    return parseResponse(response, "取消要求を送信できませんでした。");
+    return parseResponse(response, t("api.cancelFailed"));
   }
 
   async function generateRandomCluster(payload) {
@@ -39,7 +43,7 @@ window.PlasmonApi = (() => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    return parseResponse(response, "ランダム配置を生成できませんでした。");
+    return parseResponse(response, t("api.randomFailed"));
   }
 
   async function roundLayoutForDisplay(particles) {
@@ -48,7 +52,7 @@ window.PlasmonApi = (() => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ particles }),
     });
-    return parseResponse(response, "プリセット座標を表示用に整形できませんでした。");
+    return parseResponse(response, t("api.roundFailed"));
   }
 
   return {
