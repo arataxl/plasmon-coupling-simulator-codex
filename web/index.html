@@ -129,9 +129,14 @@
                       <input id="random-minimum-gap-nm" type="number" min="0.5" step="0.1" value="5" />
                     </label>
                     <label>
+                      <span data-i18n="preset.maximumSurfaceGap">最大表面間ギャップ (nm)</span>
+                      <input id="random-maximum-gap-nm" type="number" min="5" step="0.1" value="250" />
+                    </label>
+                    <label>
                       <span data-i18n="preset.seed">seed</span>
                       <input id="random-seed" type="number" min="0" step="1" value="20260720" />
                     </label>
+                    <p class="preset-description" data-i18n="preset.randomGapHelp">すべての粒子対の表面間ギャップを指定範囲内に配置します。範囲が狭すぎる場合は生成できないことがあります。</p>
                     <button id="apply-random-cluster" type="button" data-i18n="preset.applyRandom">ランダム配置を入力</button>
                   </div>
                 </details>

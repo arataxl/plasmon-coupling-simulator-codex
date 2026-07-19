@@ -113,20 +113,31 @@ class SpectrumRangeInput(BaseModel):
 
 
 class RandomClusterLayoutInput(BaseModel):
-    """UIのランダムクラスタプリセットに必要な非物理計算用入力。"""
+    """UIのランダムクラスタプリセットに必要な表示配置用入力。"""
 
     model_config = ConfigDict(extra="forbid")
 
     particle_count: int = Field(ge=1, le=20)
     mean_diameter_nm: float = Field(ge=MIN_DIAMETER_NM, le=MAX_DIAMETER_NM)
     minimum_surface_gap_nm: float = Field(ge=MIN_SURFACE_GAP_NM)
+    maximum_surface_gap_nm: float = Field(ge=MIN_SURFACE_GAP_NM)
     seed: int = Field(ge=0, le=2**63 - 1)
 
-    @field_validator("mean_diameter_nm", "minimum_surface_gap_nm")
+    @field_validator(
+        "mean_diameter_nm", "minimum_surface_gap_nm", "maximum_surface_gap_nm"
+    )
     @classmethod
     def validate_finite_values(cls, value: float, info: object) -> float:
         field_name = getattr(info, "field_name", "value")
         return _require_finite(value, field_name=field_name)
+
+    @model_validator(mode="after")
+    def validate_surface_gap_range(self) -> Self:
+        if self.maximum_surface_gap_nm < self.minimum_surface_gap_nm:
+            raise ValueError(
+                "maximum_surface_gap_nm must be at least minimum_surface_gap_nm"
+            )
+        return self
 
 
 class DisplayLayoutInput(BaseModel):

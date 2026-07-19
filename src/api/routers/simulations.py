@@ -105,16 +105,19 @@ def random_cluster_layout(
     """Test 5と同じ棄却サンプリングでUI用3Dランダムクラスタを作る。"""
     diameter_m = float(nanometres_to_metres(request.mean_diameter_nm))
     minimum_gap_m = float(nanometres_to_metres(request.minimum_surface_gap_nm))
+    maximum_gap_m = float(nanometres_to_metres(request.maximum_surface_gap_nm))
     try:
         positions_m, diameters_m = generate_random_nonoverlapping_configuration(
             diameters_m=[diameter_m] * request.particle_count,
             seed=request.seed,
             minimum_surface_gap_m=minimum_gap_m,
+            maximum_surface_gap_m=maximum_gap_m,
             placement_half_width_m=recommended_placement_half_width_m(
                 particle_count=request.particle_count,
                 mean_diameter_m=diameter_m,
                 minimum_surface_gap_m=minimum_gap_m,
             ),
+            coordinate_step_m=DISPLAY_COORDINATE_STEP_M,
         )
     except ParticleLayoutError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
@@ -122,7 +125,8 @@ def random_cluster_layout(
         display_positions_m = round_layout_coordinates_for_display(
             positions_m=positions_m,
             diameters_m=diameters_m,
-            target_minimum_surface_gap_m=minimum_gap_m + DISPLAY_COORDINATE_STEP_M,
+            target_minimum_surface_gap_m=minimum_gap_m,
+            target_maximum_surface_gap_m=maximum_gap_m,
         )
     except ParticleLayoutError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error

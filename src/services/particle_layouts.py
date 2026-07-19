@@ -14,6 +14,7 @@ DISPLAY_COORDINATE_DECIMALS = 1
 DISPLAY_COORDINATE_STEP_M = 10.0 ** (-DISPLAY_COORDINATE_DECIMALS) * 1.0e-9
 MINIMUM_DISPLAY_SURFACE_GAP_M = 0.5e-9
 _DISPLAY_GAP_TOLERANCE_M = 1.0e-18
+_LAYOUT_GAP_TOLERANCE_M = 1.0e-18
 
 FloatArray = NDArray[np.float64]
 
@@ -64,6 +65,7 @@ def round_layout_coordinates_for_display(
     positions_m: ArrayLike,
     diameters_m: ArrayLike,
     target_minimum_surface_gap_m: float = MINIMUM_DISPLAY_SURFACE_GAP_M,
+    target_maximum_surface_gap_m: float | None = None,
 ) -> FloatArray:
     """UIプリセット表示用に座標だけを安全な 0.1 nm 格子へ丸める。
 
@@ -71,6 +73,9 @@ def round_layout_coordinates_for_display(
     HTML の ``step=0.1`` 入力へ書き込む直前だけに使う表示層用の整形である。
     最近傍丸めで表面間ギャップが小さくなった場合は、一方の粒子を丸め格子上で
     外向きに移し、少なくとも ``target_minimum_surface_gap_m`` を保つ。
+    ``target_maximum_surface_gap_m`` を指定した場合は、丸め後も全粒子対がその
+    上限を超えないことを検証する。上限を守るために任意の元配置を内側へ変形する
+    ことはせず、満たせない条件は明示的にエラーにする。
     生の配置自体が 0.5 nm 未満なら、危険な入力を隠すことなくエラーにする。
     """
     position_array_m = np.asarray(positions_m, dtype=np.float64).copy()
@@ -94,6 +99,13 @@ def round_layout_coordinates_for_display(
         raise ParticleLayoutError(
             "target_minimum_surface_gap_m must be finite and at least 0.5 nm"
         )
+    if target_maximum_surface_gap_m is not None and (
+        not math.isfinite(target_maximum_surface_gap_m)
+        or target_maximum_surface_gap_m < target_minimum_surface_gap_m
+    ):
+        raise ParticleLayoutError(
+            "target_maximum_surface_gap_m must be finite and at least the minimum gap"
+        )
 
     for left_index in range(len(position_array_m)):
         for right_index in range(left_index + 1, len(position_array_m)):
@@ -106,6 +118,14 @@ def round_layout_coordinates_for_display(
             if raw_gap_m < MINIMUM_DISPLAY_SURFACE_GAP_M - _DISPLAY_GAP_TOLERANCE_M:
                 raise ParticleLayoutError(
                     "source layout contains a surface gap below the 0.5 nm model limit"
+                )
+            if (
+                target_maximum_surface_gap_m is not None
+                and raw_gap_m
+                > target_maximum_surface_gap_m + _DISPLAY_GAP_TOLERANCE_M
+            ):
+                raise ParticleLayoutError(
+                    "source layout contains a surface gap above the requested maximum"
                 )
 
     rounded_positions_m = _round_to_display_grid_m(position_array_m)
@@ -129,6 +149,23 @@ def round_layout_coordinates_for_display(
             if violation is not None:
                 break
         if violation is None:
+            if target_maximum_surface_gap_m is not None:
+                for left_index in range(len(rounded_positions_m)):
+                    for right_index in range(left_index + 1, len(rounded_positions_m)):
+                        rounded_gap_m = _surface_gap_m(
+                            rounded_positions_m[left_index],
+                            rounded_positions_m[right_index],
+                            diameter_array_m[left_index],
+                            diameter_array_m[right_index],
+                        )
+                        if (
+                            rounded_gap_m
+                            > target_maximum_surface_gap_m
+                            + _DISPLAY_GAP_TOLERANCE_M
+                        ):
+                            raise ParticleLayoutError(
+                                "rounded layout exceeds the requested maximum surface gap"
+                            )
             return rounded_positions_m
 
         left_index, right_index = violation
@@ -197,14 +234,19 @@ def generate_random_nonoverlapping_configuration(
     diameters_m: ArrayLike,
     seed: int,
     minimum_surface_gap_m: float,
+    maximum_surface_gap_m: float | None = None,
     placement_half_width_m: float = DEFAULT_PLACEMENT_HALF_WIDTH_M,
     max_attempts: int = DEFAULT_MAX_PLACEMENT_ATTEMPTS,
+    coordinate_step_m: float | None = None,
 ) -> tuple[FloatArray, FloatArray]:
-    """指定seedで表面間ギャップを守るランダム3D配置を生成する。
+    """指定seedで表面間ギャップ範囲を守るランダム3D配置を生成する。
 
     これはValidation Test 5で用いる逐次の棄却サンプリングそのものである。UIの
     ランダムクラスタも同じ関数をAPI経由で使うため、表示用と試験用で異なる乱数配置
-    ロジックを持たない。長さはすべてSI単位（m）である。
+    ロジックを持たない。``maximum_surface_gap_m`` を指定した場合は、すべての
+    粒子対を最小・最大表面間ギャップの範囲内に収める。``coordinate_step_m`` は
+    UI表示用の格子配置だけに使い、Test 5の連続座標生成は既定値 ``None`` のままに
+    する。長さはすべてSI単位（m）である。
     """
     diameter_array_m = np.asarray(diameters_m, dtype=np.float64).copy()
     if diameter_array_m.ndim != 1 or diameter_array_m.size == 0:
@@ -217,29 +259,98 @@ def generate_random_nonoverlapping_configuration(
         raise ParticleLayoutError(
             "minimum_surface_gap_m must be finite and non-negative"
         )
+    if maximum_surface_gap_m is not None and (
+        not math.isfinite(maximum_surface_gap_m)
+        or maximum_surface_gap_m < minimum_surface_gap_m
+    ):
+        raise ParticleLayoutError(
+            "maximum_surface_gap_m must be finite and at least minimum_surface_gap_m"
+        )
     placement_half_width_m = _finite_positive(
         placement_half_width_m,
         name="placement_half_width_m",
     )
     if max_attempts < 1:
         raise ParticleLayoutError("max_attempts must be at least one")
+    if coordinate_step_m is not None:
+        coordinate_step_m = _finite_positive(
+            coordinate_step_m,
+            name="coordinate_step_m",
+        )
 
     random_generator = np.random.default_rng(seed)
     random_generator.shuffle(diameter_array_m)
     positions_m = np.empty((len(diameter_array_m), 3), dtype=np.float64)
     for particle_index, diameter_m in enumerate(diameter_array_m):
         for _ in range(max_attempts):
-            candidate_position_m = random_generator.uniform(
-                low=-placement_half_width_m,
-                high=placement_half_width_m,
-                size=3,
-            )
-            if all(
-                np.linalg.norm(candidate_position_m - positions_m[other_index])
-                - (diameter_m + diameter_array_m[other_index]) / 2.0
-                > minimum_surface_gap_m
-                for other_index in range(particle_index)
-            ):
+            lower_bound_m = np.full(3, -placement_half_width_m, dtype=np.float64)
+            upper_bound_m = np.full(3, placement_half_width_m, dtype=np.float64)
+            if maximum_surface_gap_m is not None:
+                for other_index in range(particle_index):
+                    maximum_center_distance_m = (
+                        (diameter_m + diameter_array_m[other_index]) / 2.0
+                        + maximum_surface_gap_m
+                    )
+                    lower_bound_m = np.maximum(
+                        lower_bound_m,
+                        positions_m[other_index] - maximum_center_distance_m,
+                    )
+                    upper_bound_m = np.minimum(
+                        upper_bound_m,
+                        positions_m[other_index] + maximum_center_distance_m,
+                    )
+            if np.any(lower_bound_m > upper_bound_m):
+                raise ParticleLayoutError(
+                    "could not generate a configuration within the requested gap range"
+                )
+            if coordinate_step_m is None:
+                candidate_position_m = random_generator.uniform(
+                    low=lower_bound_m,
+                    high=upper_bound_m,
+                    size=3,
+                )
+            else:
+                lower_grid_coordinates = np.ceil(
+                    (lower_bound_m - _LAYOUT_GAP_TOLERANCE_M) / coordinate_step_m
+                ).astype(np.int64)
+                upper_grid_coordinates = np.floor(
+                    (upper_bound_m + _LAYOUT_GAP_TOLERANCE_M) / coordinate_step_m
+                ).astype(np.int64)
+                if np.any(lower_grid_coordinates > upper_grid_coordinates):
+                    raise ParticleLayoutError(
+                        "could not generate a grid-aligned configuration within the requested gap range"
+                    )
+                candidate_position_m = np.asarray(
+                    [
+                        random_generator.integers(
+                            int(lower_grid_coordinate),
+                            int(upper_grid_coordinate) + 1,
+                        )
+                        * coordinate_step_m
+                        for lower_grid_coordinate, upper_grid_coordinate in zip(
+                            lower_grid_coordinates,
+                            upper_grid_coordinates,
+                            strict=True,
+                        )
+                    ],
+                    dtype=np.float64,
+                )
+            candidate_is_valid = True
+            for other_index in range(particle_index):
+                surface_gap_m = _surface_gap_m(
+                    candidate_position_m,
+                    positions_m[other_index],
+                    diameter_m,
+                    diameter_array_m[other_index],
+                )
+                if surface_gap_m <= minimum_surface_gap_m or (
+                    maximum_surface_gap_m is not None
+                    and surface_gap_m
+                    > maximum_surface_gap_m + _LAYOUT_GAP_TOLERANCE_M
+                ):
+                    candidate_is_valid = False
+                    break
+            if candidate_is_valid:
                 positions_m[particle_index] = candidate_position_m
                 break
         else:

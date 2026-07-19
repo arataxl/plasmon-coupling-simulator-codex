@@ -32,6 +32,7 @@ def test_japanese_and_english_translation_catalogues_have_matching_keys() -> Non
         "warning.nirCdaLimit",
         "actions.calculate",
         "actions.cancel",
+        "preset.maximumSurfaceGap",
     } <= japanese_keys
 
 
@@ -64,18 +65,34 @@ def test_index_translation_attributes_reference_catalogue_keys() -> None:
 
 
 def test_preview_uses_nm_meshes_without_camera_distance_resizing() -> None:
-    """粒子径をデータ座標系の球メッシュで描き、カメラ距離へ依存しない。"""
+    """粒子径を真球メッシュで描き、カメラ距離へ依存しない。"""
     input_form = (WEB_ROOT / "js" / "input_form.js").read_text(encoding="utf-8")
 
     assert 'type: "mesh3d"' in input_form
     assert "function createSphereMesh" in input_form
     assert "const radiusNm = particle.diameter_nm / 2.0;" in input_form
-    assert "const sphereLatitudeSegments = 8;" in input_form
-    assert "const sphereLongitudeSegments = 12;" in input_form
+    assert "const sphereLatitudeSegments = 16;" in input_form
+    assert "const sphereLongitudeSegments = 16;" in input_form
+    assert "const spherePalette = Object.freeze" in input_form
+    assert 'opacity: 1' in input_form
+    assert 'aspectmode: "cube"' in input_form
+    assert 'symbol: "square"' in input_form
     assert '"plotly_relayout"' not in input_form
     assert '"marker.size"' not in input_form
     assert 'tickmode: "linear"' in input_form
     assert "dtick: niceTickStep(range)" in input_form
+
+
+def test_random_cluster_form_and_request_include_a_maximum_surface_gap() -> None:
+    """ランダムクラスタの上限はUIとAPI要求の両方で明示する。"""
+    index = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+    input_form = (WEB_ROOT / "js" / "input_form.js").read_text(encoding="utf-8")
+
+    assert 'id="random-maximum-gap-nm"' in index
+    assert 'data-i18n="preset.maximumSurfaceGap"' in index
+    assert 'data-i18n="preset.randomGapHelp"' in index
+    assert 'maximum_surface_gap_nm: maximumSurfaceGapNm' in input_form
+    assert 't("validation.randomGapRange")' in input_form
 
 
 def test_preview_uses_a_dedicated_panel_with_minimum_display_area() -> None:

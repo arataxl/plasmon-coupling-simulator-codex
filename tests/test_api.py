@@ -179,6 +179,7 @@ def test_random_cluster_layout_uses_a_valid_seeded_3d_configuration() -> None:
         "particle_count": 5,
         "mean_diameter_nm": 20.0,
         "minimum_surface_gap_nm": 5.0,
+        "maximum_surface_gap_nm": 250.0,
         "seed": 20260720,
     }
 
@@ -202,6 +203,43 @@ def test_random_cluster_layout_uses_a_valid_seeded_3d_configuration() -> None:
                 left["diameter_nm"] + right["diameter_nm"]
             ) / 2.0
             assert surface_gap_nm > payload["minimum_surface_gap_nm"]
+            assert surface_gap_nm <= payload["maximum_surface_gap_nm"] + 1.0e-12
+
+
+def test_random_cluster_layout_rejects_a_reversed_surface_gap_range() -> None:
+    payload = {
+        "particle_count": 5,
+        "mean_diameter_nm": 20.0,
+        "minimum_surface_gap_nm": 5.0,
+        "maximum_surface_gap_nm": 4.9,
+        "seed": 20260720,
+    }
+
+    status_code, response = _post_json("/layouts/random-cluster", payload)
+
+    assert status_code == 422
+    assert response["error"]["code"] == "invalid_input"
+    assert "maximum_surface_gap_nm" in json.dumps(response["error"]["details"])
+
+
+def test_random_cluster_layout_can_generate_a_qcm_range_without_crossing_bounds() -> None:
+    payload = {
+        "particle_count": 2,
+        "mean_diameter_nm": 20.0,
+        "minimum_surface_gap_nm": 0.5,
+        "maximum_surface_gap_nm": 0.9,
+        "seed": 20260720,
+    }
+
+    status_code, response = _post_json("/layouts/random-cluster", payload)
+
+    assert status_code == 200
+    first, second = response["particles"]
+    surface_gap_nm = math.dist(
+        (first["x_nm"], first["y_nm"], first["z_nm"]),
+        (second["x_nm"], second["y_nm"], second["z_nm"]),
+    ) - (first["diameter_nm"] + second["diameter_nm"]) / 2.0
+    assert 0.5 <= surface_gap_nm <= 0.9
 
 
 def test_display_layout_endpoint_rounds_triangle_coordinates_without_breaking_gap_limit() -> None:

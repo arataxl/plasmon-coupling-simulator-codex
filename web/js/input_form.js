@@ -3,10 +3,21 @@ window.PlasmonInputForm = (() => {
   const minimumDiameterNm = 2;
   const maximumDiameterNm = 100;
   const minimumGapNm = 0.5;
-  const sphereLatitudeSegments = 8;
-  const sphereLongitudeSegments = 12;
-  const sphereFillColor = "#d69e2e";
-  const sphereOutlineColor = "#6b4200";
+  const sphereLatitudeSegments = 16;
+  const sphereLongitudeSegments = 16;
+  const spherePalette = Object.freeze([
+    "#d69e2e",
+    "#b7791f",
+    "#e0b44d",
+    "#9c6428",
+    "#c88932",
+    "#edca63",
+    "#805b31",
+    "#d3a150",
+    "#a77437",
+    "#e4b777",
+  ]);
+  const sphereOutlineColor = "#4f3414";
   const labelDirection = Object.freeze({ x: 0.3, y: 0.3, z: 0.9055385138 });
   const mediumPresets = {
     water: { name: "water", refractiveIndex: 1.33 },
@@ -143,12 +154,37 @@ window.PlasmonInputForm = (() => {
     return result;
   }
 
-  function axisRange(values, maximumDiameterNm) {
-    const minimum = Math.min(...values);
-    const maximum = Math.max(...values);
-    const span = Math.max(maximum - minimum, maximumDiameterNm, 1.0);
-    const padding = Math.max(span * 0.35, maximumDiameterNm * 0.9, 8.0);
-    return [minimum - padding, maximum + padding];
+  function equalAxisRanges(candidateParticles) {
+    const maximumDiameterNm = Math.max(
+      ...candidateParticles.map((particle) => particle.diameter_nm),
+    );
+    const minimums = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
+    const maximums = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
+    candidateParticles.forEach((particle) => {
+      const radiusNm = particle.diameter_nm / 2.0;
+      [particle.x_nm, particle.y_nm, particle.z_nm].forEach((coordinate, axis) => {
+        minimums[axis] = Math.min(minimums[axis], coordinate - radiusNm);
+        maximums[axis] = Math.max(maximums[axis], coordinate + radiusNm);
+      });
+    });
+    const widestSpanNm = Math.max(
+      ...maximums.map((maximum, axis) => maximum - minimums[axis]),
+      maximumDiameterNm,
+      1.0,
+    );
+    const paddingNm = Math.max(widestSpanNm * 0.2, maximumDiameterNm * 0.5, 8.0);
+    const totalSpanNm = widestSpanNm + 2.0 * paddingNm;
+    const halfSpanNm = totalSpanNm / 2.0;
+    const ranges = maximums.map((maximum, axis) => {
+      const centerNm = (minimums[axis] + maximum) / 2.0;
+      return [centerNm - halfSpanNm, centerNm + halfSpanNm];
+    });
+    return {
+      xRange: ranges[0],
+      yRange: ranges[1],
+      zRange: ranges[2],
+      viewSpanNm: totalSpanNm,
+    };
   }
 
   function niceTickStep(range) {
@@ -178,7 +214,7 @@ window.PlasmonInputForm = (() => {
     };
   }
 
-  function createSphereMesh(particle) {
+  function createSphereMesh(particle, particleIndex) {
     const radiusNm = particle.diameter_nm / 2.0;
     const verticesPerLatitude = sphereLongitudeSegments + 1;
     const x = [];
@@ -220,8 +256,8 @@ window.PlasmonInputForm = (() => {
       i,
       j,
       k,
-      color: sphereFillColor,
-      opacity: 0.93,
+      color: spherePalette[particleIndex % spherePalette.length],
+      opacity: 1,
       flatshading: false,
       lighting: { ambient: 0.58, diffuse: 0.82, specular: 0.28, roughness: 0.75 },
       lightposition: { x: 100, y: 120, z: 180 },
@@ -253,23 +289,12 @@ window.PlasmonInputForm = (() => {
       }
       return;
     }
-    const maximumDiameter = Math.max(...finiteParticles.map((particle) => particle.diameter_nm));
-    const xValues = finiteParticles.map((particle) => particle.x_nm);
-    const yValues = finiteParticles.map((particle) => particle.y_nm);
-    const zValues = finiteParticles.map((particle) => particle.z_nm);
-    const xRange = axisRange(xValues, maximumDiameter);
-    const yRange = axisRange(yValues, maximumDiameter);
-    const zRange = axisRange(zValues, maximumDiameter);
-    const viewSpan = Math.max(
-      xRange[1] - xRange[0],
-      yRange[1] - yRange[0],
-      zRange[1] - zRange[0],
-    );
-    const labelPositions = finiteParticles.map((particle) => labelPosition(particle, viewSpan));
-    const sphereTraces = finiteParticles.map((particle) => createSphereMesh(particle));
+    const { xRange, yRange, zRange, viewSpanNm } = equalAxisRanges(finiteParticles);
+    const labelPositions = finiteParticles.map((particle) => labelPosition(particle, viewSpanNm));
+    const sphereTraces = finiteParticles.map((particle, index) => createSphereMesh(particle, index));
     const labelTrace = {
       type: "scatter3d",
-      mode: "text",
+      mode: "markers+text",
       x: labelPositions.map((position) => position.x),
       y: labelPositions.map((position) => position.y),
       z: labelPositions.map((position) => position.z),
@@ -281,7 +306,18 @@ window.PlasmonInputForm = (() => {
         particle.z_nm,
       ]),
       textposition: "middle center",
-      textfont: { color: "#17324d", size: 13 },
+      textfont: {
+        color: "#102a43",
+        family: '"Segoe UI Semibold", "Noto Sans JP", sans-serif',
+        size: 17,
+      },
+      marker: {
+        color: "rgba(255, 255, 255, 0.94)",
+        line: { color: "#173f5f", width: 2 },
+        opacity: 0.96,
+        size: 24,
+        symbol: "square",
+      },
       hovertemplate: t("preview.hover"),
       hoverlabel: { bgcolor: "#17324d", font: { color: "#ffffff" } },
       showlegend: false,
@@ -296,7 +332,7 @@ window.PlasmonInputForm = (() => {
           xaxis: sceneAxis(t("preview.xAxis"), xRange),
           yaxis: sceneAxis(t("preview.yAxis"), yRange),
           zaxis: sceneAxis(t("preview.zAxis"), zRange),
-          aspectmode: "data",
+          aspectmode: "cube",
           dragmode: "orbit",
           camera: {
             eye: { x: 1.8, y: 1.8, z: 1.45 },
@@ -421,10 +457,20 @@ window.PlasmonInputForm = (() => {
     const button = document.getElementById("apply-random-cluster");
     button.disabled = true;
     try {
+      const minimumSurfaceGapNm = numberValue("random-minimum-gap-nm");
+      const maximumSurfaceGapNm = numberValue("random-maximum-gap-nm");
+      if (
+        Number.isFinite(minimumSurfaceGapNm) &&
+        Number.isFinite(maximumSurfaceGapNm) &&
+        maximumSurfaceGapNm < minimumSurfaceGapNm
+      ) {
+        throw new Error(t("validation.randomGapRange"));
+      }
       const response = await window.PlasmonApi.generateRandomCluster({
         particle_count: numberValue("random-particle-count"),
         mean_diameter_nm: numberValue("random-mean-diameter-nm"),
-        minimum_surface_gap_nm: numberValue("random-minimum-gap-nm"),
+        minimum_surface_gap_nm: minimumSurfaceGapNm,
+        maximum_surface_gap_nm: maximumSurfaceGapNm,
         seed: numberValue("random-seed"),
       });
       setParticles(response.particles);
@@ -522,6 +568,12 @@ window.PlasmonInputForm = (() => {
     document.getElementById("apply-random-cluster").addEventListener("click", () => {
       applyRandomCluster().catch(showPresetError);
     });
+    document.getElementById("random-minimum-gap-nm").addEventListener("input", () => {
+      const minimumSurfaceGapNm = numberValue("random-minimum-gap-nm");
+      if (Number.isFinite(minimumSurfaceGapNm)) {
+        document.getElementById("random-maximum-gap-nm").min = String(minimumSurfaceGapNm);
+      }
+    });
     document.getElementById("add-particle").addEventListener("click", addParticle);
     window.addEventListener("plasmonlanguagechange", () => {
       particles = readParticles();
@@ -531,6 +583,9 @@ window.PlasmonInputForm = (() => {
     });
     initializeTabs();
     updateMediumInput();
+    document.getElementById("random-maximum-gap-nm").min = String(
+      numberValue("random-minimum-gap-nm"),
+    );
     applyDimer().catch(showPresetError);
   }
 
