@@ -4,8 +4,9 @@
 量子補正モデル（QCM）で条件探索するための、研究者・学生向けローカルWebアプリです。
 実験データの定量再現器や、BEM/DDA/FDTD/TDDFTの代替を目的にはしません。
 
-> 状態：Build Week MVPの**実装前設計段階**です。このREADMEは目標構成と
-> 適用範囲を示すものであり、API、UI、テスト、セットアップ用バッチはまだ実装されていません。
+> 状態：Phase 1完了。Johnson and Christy材料データ、単一球の完全Mie参照計算、
+> 入力スキーマ、Validation Test 1は実装済みです。API、UI、CDA、QCM、
+> セットアップ用バッチは未実装です。
 
 ## MVPで目指すこと
 
@@ -60,8 +61,8 @@ QCMの物理的根拠、暫定表の抽出方法、4層化の収束確認、限�
 | スキーマ・入出力 | Pydantic、Python標準のJSON/CSV |
 | テスト | pytest、`docs/validation_plan.md`のTest 1〜6に対応 |
 
-`requirements.txt` はまだ作成していません。パッケージをインストールまたは追加する前に、
-バージョン固定・ライセンス・セットアップ手順を確認して承認を得ます。
+実行依存は `requirements.txt`、開発依存は `requirements-dev.txt` に定義しています。
+追加の依存パッケージ、バージョン変更、セットアップ手順の変更は、事前承認を得てから行います。
 
 既存Antigravity方針に従い、Plotly.jsは `2.24.1` をローカルに同梱する予定です。
 取得元は `https://cdn.plot.ly/plotly-2.24.1.min.js`、期待SHA-256は
@@ -89,7 +90,8 @@ run_app.bat
 数値しきい値、QCMの4層/5層比較、Mie基準配列は
 [docs/validation_plan.md](docs/validation_plan.md) と [docs/SPEC.md](docs/SPEC.md) を正とします。
 
-現時点ではpytestモジュールは未作成であり、テスト件数やpass実績は主張しません。
+Phase 1ではTest 1と入力スキーマのpytestを実装済みです。Test 2〜6とAPI/SSEの統合試験は
+後続Phaseで追加します。提出時には、実行環境・依存バージョン・pass実績を記録します。
 
 ## 開発におけるAI利用記録（Build Week提出用）
 

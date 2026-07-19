@@ -15,10 +15,11 @@ csv_download_url: "https://refractiveindex.info/data_csv.php?datafile=database/d
 original_wavelength_unit: micrometer
 converted_wavelength_unit: nanometer
 wavelength_range_original_um: [0.1879, 1.937]
-wavelength_range_used_nm: [400, 1000]
+wavelength_range_available_nm: [187.9, 1937]
+wavelength_range_used_nm: [200, 1500]
 data_type: bulk_thin_film
 caution: >
   バルク薄膜の光学定数であり、ナノ粒子の表面散乱、粒径依存減衰、
   結晶性、配位子層は反映していない。
   5 nm 級粒子では表面散乱補正（size-corrected damping）を別途検討すること。
-interpolation: linear_or_cubic_spline（コード側で選択）
+interpolation: linear

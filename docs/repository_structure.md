@@ -4,7 +4,8 @@
 
 本書は `docs/SPEC.md` と `docs/quantum_corrected_model_integration.md` を
 実装へ展開するための構成案である。以下のツリーは**実装時の目標構成**であり、
-この文書を追加した時点では空ディレクトリ、Pythonモジュール、依存定義を作成しない。
+Phase 1では依存定義、`src/physics/material_data.py`、
+`src/physics/mie_reference.py`、`src/schemas/simulation.py`、Test 1だけを作成した。
 物理的な適用範囲は既存の物理前提文書を正とする。
 
 ## 目標ディレクトリツリー
@@ -15,7 +16,8 @@
 ├── README.md
 ├── setup_windows.bat                 # 初回セットアップ（実装Phaseで追加）
 ├── run_app.bat                       # localhost起動（実装Phaseで追加）
-├── requirements.txt                  # 承認後にのみ追加・固定する
+├── requirements.txt                  # Phase 1で承認済み依存を固定
+├── requirements-dev.txt              # Phase 1でRuffを開発依存として分離
 ├── src/
 │   ├── main.py                        # FastAPIアプリの生成、localhost用の組立て
 │   ├── api/
@@ -79,10 +81,10 @@
     └── repository_structure.md
 ```
 
-`requirements.txt`、`src/`、`web/`、`tests/` と `data/qcm/` はこの構成案の
-実装対象であり、現時点では作成しない。CSV/JSONはブラウザへのダウンロードとして
-返し、計算結果をサーバー上の実行ディレクトリへ残さない。この方針により、取消時に
-部分データを保存しないというMVP要件を満たしやすくする。
+Phase 1以外の `src/` モジュール、`web/`、`data/qcm/`、Test 2〜6はこの構成案の
+後続実装対象である。CSV/JSONはブラウザへのダウンロードとして返し、計算結果を
+サーバー上の実行ディレクトリへ残さない。この方針により、取消時に部分データを
+保存しないというMVP要件を満たしやすくする。
 
 ## 層の責務と依存方向
 
@@ -135,10 +137,9 @@ QCM表の抽出手順、校正点、読取誤差の定義は
 | テスト | pytest | `docs/validation_plan.md` のTest 1〜6をモジュール単位で対応付けられる。物理コアをAPI/UIより先に検証する。 |
 | 静的解析 | Ruff（任意の開発依存） | 既存AGENTS.mdの方針を維持する。導入・依存定義は別途承認後に行う。 |
 
-現時点で `requirements.txt` は存在しない。この文書は技術選定を確定するが、外部Python
-パッケージをインストールも追加もしない。実装開始前に、FastAPI、uvicorn、NumPy、SciPy、
-miepython、pytest（およびRuffを使うならRuff）のバージョン固定とライセンスをまとめて
-ユーザー承認する必要がある。
+`requirements.txt` と `requirements-dev.txt` には、承認済みのバージョン範囲を記録した。
+今後の依存追加または範囲変更には、FastAPI、uvicorn、NumPy、SciPy、miepython、pytest、
+Ruffと同様にユーザー承認が必要である。
 
 ## Antigravity版からの変更点
 

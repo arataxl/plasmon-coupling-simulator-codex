@@ -3,6 +3,10 @@
 *.jws
 data/measurements/
 
+# Dependency manifests are source-controlled despite the measurement-data rule.
+!requirements.txt
+!requirements-dev.txt
+
 # Python environments and bytecode caches
 .venv/
 **/__pycache__/
