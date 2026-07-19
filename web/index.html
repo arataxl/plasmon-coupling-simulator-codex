@@ -8,6 +8,7 @@
     <script defer src="/static/vendor/plotly-2.24.1.min.js"></script>
     <script defer src="/static/js/api_client.js"></script>
     <script defer src="/static/js/input_form.js"></script>
+    <script defer src="/static/js/progress.js"></script>
     <script defer src="/static/js/results.js"></script>
     <script defer src="/static/js/app.js"></script>
   </head>
@@ -26,23 +27,79 @@
       <section class="panel input-panel" aria-labelledby="input-title">
         <h2 id="input-title">計算条件</h2>
         <p class="form-help">
-          この画面では同一直径のAu球をx軸上へ等間隔に配置します。3D個別配置は後続の入出力機能で扱います。
+          粒子ごとに径と3D中心座標を指定できます。計算前に配置プレビューで重なりと近接ギャップを確認してください。
         </p>
         <form id="simulation-form">
           <fieldset>
-            <legend>粒子配置</legend>
-            <label>
-              粒子数
-              <input id="particle-count" name="particle-count" type="number" min="1" max="20" value="2" required />
-            </label>
-            <label>
-              粒子径 (nm)
-              <input id="diameter-nm" name="diameter-nm" type="number" min="2" max="100" step="0.1" value="20" required />
-            </label>
-            <label>
-              表面間ギャップ (nm)
-              <input id="gap-nm" name="gap-nm" type="number" min="0.5" step="0.1" value="5" required />
-            </label>
+            <legend>粒子配置プリセット</legend>
+            <div class="preset-grid">
+              <section class="preset-card" aria-label="二量体プリセット">
+                <h3>二量体</h3>
+                <label>
+                  径 (nm)
+                  <input id="dimer-diameter-nm" type="number" min="2" max="100" step="0.1" value="20" />
+                </label>
+                <label>
+                  表面間ギャップ (nm)
+                  <input id="dimer-gap-nm" type="number" min="0.5" step="0.1" value="5" />
+                </label>
+                <button id="apply-dimer" type="button">二量体を入力</button>
+              </section>
+              <section class="preset-card" aria-label="正三角形三量体プリセット">
+                <h3>正三角形三量体</h3>
+                <label>
+                  径 (nm)
+                  <input id="trimer-diameter-nm" type="number" min="2" max="100" step="0.1" value="20" />
+                </label>
+                <label>
+                  中心間距離 (nm)
+                  <input id="trimer-center-distance-nm" type="number" min="0.5" step="0.1" value="30" />
+                </label>
+                <button id="apply-trimer" type="button">三量体を入力</button>
+              </section>
+              <section class="preset-card" aria-label="ランダムクラスタプリセット">
+                <h3>ランダムクラスタ</h3>
+                <label>
+                  粒子数
+                  <input id="random-particle-count" type="number" min="1" max="20" step="1" value="5" />
+                </label>
+                <label>
+                  平均径 (nm)
+                  <input id="random-mean-diameter-nm" type="number" min="2" max="100" step="0.1" value="20" />
+                </label>
+                <label>
+                  最小表面間ギャップ (nm)
+                  <input id="random-minimum-gap-nm" type="number" min="0.5" step="0.1" value="5" />
+                </label>
+                <label>
+                  seed
+                  <input id="random-seed" type="number" min="0" step="1" value="20260720" />
+                </label>
+                <button id="apply-random-cluster" type="button">ランダム配置を入力</button>
+              </section>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>個別粒子の3D座標</legend>
+            <div class="particle-table-wrap">
+              <table class="particle-table">
+                <thead>
+                  <tr>
+                    <th scope="col">#</th>
+                    <th scope="col">径 (nm)</th>
+                    <th scope="col">x (nm)</th>
+                    <th scope="col">y (nm)</th>
+                    <th scope="col">z (nm)</th>
+                    <th scope="col"><span class="visually-hidden">削除</span></th>
+                  </tr>
+                </thead>
+                <tbody id="particle-rows"></tbody>
+              </table>
+            </div>
+            <button id="add-particle" type="button">粒子を追加（最大20個）</button>
+            <p id="geometry-validation" class="geometry-validation" role="status" aria-live="polite"></p>
+            <div id="geometry-preview" class="geometry-preview" aria-label="粒子配置の3Dプレビュー"></div>
           </fieldset>
 
           <fieldset>
@@ -83,18 +140,22 @@
             <label>
               偏光方向（伝搬方向はz軸）
               <select id="polarization" name="polarization">
-                <option value="x">x軸（配置軸に平行）</option>
-                <option value="y">y軸（配置軸に垂直）</option>
+                <option value="x">x軸偏光</option>
+                <option value="y">y軸偏光</option>
               </select>
             </label>
           </fieldset>
 
           <p class="safety-note">
-            0.5 nm未満のギャップは計算できません。0.5〜1.0 nmではQCMを自動適用します。
+            0.5 nm未満の表面間ギャップは計算できません。0.5〜1.0 nmではQCMを自動適用します。
           </p>
           <button id="simulate-button" type="submit">スペクトルを計算</button>
         </form>
-        <p id="progress-message" class="progress-message" role="status" aria-live="polite"></p>
+        <div class="progress-area" aria-live="polite">
+          <progress id="simulation-progress" max="1" value="0">0%</progress>
+          <p id="progress-message" class="progress-message" role="status"></p>
+          <button id="cancel-button" type="button" disabled>計算を取り消す</button>
+        </div>
         <div id="error-message" class="error-message" role="alert" hidden></div>
       </section>
 
@@ -102,7 +163,7 @@
         <div class="result-heading">
           <div>
             <h2 id="result-title">計算結果</h2>
-            <p>表示単位：nm²（ダウンロードデータの断面積はm²）</p>
+            <p>表示単位：nm²（ダウンロードデータの断面積はm²、効率は無次元）</p>
           </div>
           <div class="download-actions">
             <button id="download-csv" type="button" disabled>CSVをダウンロード</button>

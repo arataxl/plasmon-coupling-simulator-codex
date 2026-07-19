@@ -13,7 +13,8 @@ MAX_DIAMETER_NM = 100.0
 MIN_SURFACE_GAP_NM = 0.5
 MIN_WAVELENGTH_NM = 200.0
 MAX_WAVELENGTH_NM = 1500.0
-MAX_SPECTRUM_POINTS = 301
+MAX_SYNCHRONOUS_SPECTRUM_POINTS = 301
+MAX_STREAM_SPECTRUM_POINTS = 5_000
 _GAP_COMPARISON_ABS_TOLERANCE_NM = 1e-12
 
 
@@ -105,19 +106,27 @@ class SpectrumRangeInput(BaseModel):
         return _require_finite(value, field_name=field_name)
 
     @model_validator(mode="after")
-    def validate_range_and_point_count(self) -> Self:
+    def validate_range(self) -> Self:
         if self.end_wavelength_nm < self.start_wavelength_nm:
             raise ValueError("end_wavelength_nm must be at least start_wavelength_nm")
-        interval_count = math.ceil(
-            (self.end_wavelength_nm - self.start_wavelength_nm) / self.step_nm
-        )
-        point_count = interval_count + 1
-        if point_count > MAX_SPECTRUM_POINTS:
-            raise ValueError(
-                "spectrum range exceeds the synchronous API limit of "
-                f"{MAX_SPECTRUM_POINTS} points; increase step_nm or narrow the range"
-            )
         return self
+
+
+class RandomClusterLayoutInput(BaseModel):
+    """UIのランダムクラスタプリセットに必要な非物理計算用入力。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    particle_count: int = Field(ge=1, le=20)
+    mean_diameter_nm: float = Field(ge=MIN_DIAMETER_NM, le=MAX_DIAMETER_NM)
+    minimum_surface_gap_nm: float = Field(ge=MIN_SURFACE_GAP_NM)
+    seed: int = Field(ge=0, le=2**63 - 1)
+
+    @field_validator("mean_diameter_nm", "minimum_surface_gap_nm")
+    @classmethod
+    def validate_finite_values(cls, value: float, info: object) -> float:
+        field_name = getattr(info, "field_name", "value")
+        return _require_finite(value, field_name=field_name)
 
 
 class SimulationInput(BaseModel):

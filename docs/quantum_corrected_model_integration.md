@@ -70,7 +70,8 @@ CDAへの補助双極子としての注入までを実装する。原論文と�
   `qcm_parameter_status`（`provisional_digitized`）、`qcm_figure`、
   `qcm_curve`、`qcm_calibration_points`、`qcm_reading_uncertainty`、
   `qcm_interpolation` を保存する。これらと層数・CDA縮約モデル・誤差注記を必須化する
-  `src/schemas/result.py` は実装済みである。JSON出力・UI注記の実装は別タスクとする。
+  `src/schemas/result.py`、`src/io/exporters.py`、静的UIのQCM注記で実装済みである。JSON往復時も
+  この必須来歴をPydanticスキーマで検証する。
 
 ## モデルの物理的な考え方
 QCMは、粒子間ギャップを「空の媒質」としてそのまま扱うのではなく、

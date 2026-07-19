@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 from collections.abc import Mapping
 from typing import Any
 
@@ -93,9 +94,15 @@ def test_simulate_returns_spectrum_and_reference_cross_sections() -> None:
         "c_ext_m2",
         "c_sca_m2",
         "c_abs_m2",
+        "geometric_cross_section_m2",
+        "q_ext",
+        "q_sca",
+        "q_abs",
     }
     assert response["spectrum"]["wavelength_nm"] == [580.0, 600.0, 620.0]
     assert len(response["spectrum"]["c_ext_m2"]) == 3
+    assert len(response["spectrum"]["q_ext"]) == 3
+    assert response["provenance"]["model_name"] == "FCDA-CDA with QCM auxiliary bridge dipoles"
     assert response["qcm_metadata"]["qcm_applied"] is False
 
 
@@ -150,3 +157,43 @@ def test_simulate_returns_explicit_error_when_qcm_metadata_is_unavailable(
         "code": "qcm_metadata_unavailable",
         "message": "QCM provenance fields are unavailable",
     }
+
+
+def test_synchronous_endpoint_retains_the_301_point_limit() -> None:
+    payload = _simulation_payload()
+    payload["spectrum"] = {
+        "start_wavelength_nm": 200.0,
+        "end_wavelength_nm": 1500.0,
+        "step_nm": 4.0,
+    }
+
+    status_code, response = _post_json("/simulate", payload)
+
+    assert status_code == 422
+    assert response["error"]["code"] == "simulation_failed"
+    assert "synchronous API limit of 301 points" in response["error"]["message"]
+
+
+def test_random_cluster_layout_uses_a_valid_seeded_3d_configuration() -> None:
+    payload = {
+        "particle_count": 5,
+        "mean_diameter_nm": 20.0,
+        "minimum_surface_gap_nm": 5.0,
+        "seed": 20260720,
+    }
+
+    status_code, response = _post_json("/layouts/random-cluster", payload)
+
+    assert status_code == 200
+    particles = response["particles"]
+    assert len(particles) == payload["particle_count"]
+    for left_index, left in enumerate(particles):
+        for right in particles[left_index + 1 :]:
+            center_distance_nm = math.dist(
+                (left["x_nm"], left["y_nm"], left["z_nm"]),
+                (right["x_nm"], right["y_nm"], right["z_nm"]),
+            )
+            surface_gap_nm = center_distance_nm - (
+                left["diameter_nm"] + right["diameter_nm"]
+            ) / 2.0
+            assert surface_gap_nm > payload["minimum_surface_gap_nm"]

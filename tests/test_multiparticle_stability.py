@@ -14,6 +14,7 @@ from src.physics.cda_solver import (
     solve_cda,
 )
 from src.physics.material_data import OpticalConstants, load_au_optical_constants
+from src.services.particle_layouts import generate_random_nonoverlapping_configuration
 
 
 MEDIUM_REFRACTIVE_INDEX = 1.33
@@ -31,8 +32,6 @@ PARTICLE_COUNTS_AND_SEEDS = (
     (20, 2026072920),
 )
 DIAMETER_CHOICES_M = np.array((12.0, 16.0, 20.0, 24.0, 28.0)) * 1.0e-9
-PLACEMENT_HALF_WIDTH_M = 150.0e-9
-MAX_PLACEMENT_ATTEMPTS = 10_000
 
 
 @pytest.fixture(scope="module")
@@ -58,30 +57,11 @@ def _generate_random_configuration(
     *, particle_count: int, seed: int
 ) -> tuple[np.ndarray, np.ndarray]:
     """指定seedで、5 nm超の表面間ギャップを持つ混合粒径配置を生成する。"""
-    random_generator = np.random.default_rng(seed)
-    diameters_m = np.resize(DIAMETER_CHOICES_M, particle_count).copy()
-    random_generator.shuffle(diameters_m)
-
-    positions_m = np.empty((particle_count, 3), dtype=np.float64)
-    for particle_index, diameter_m in enumerate(diameters_m):
-        for _ in range(MAX_PLACEMENT_ATTEMPTS):
-            candidate_position_m = random_generator.uniform(
-                low=-PLACEMENT_HALF_WIDTH_M,
-                high=PLACEMENT_HALF_WIDTH_M,
-                size=3,
-            )
-            if all(
-                np.linalg.norm(candidate_position_m - positions_m[other_index])
-                - (diameter_m + diameters_m[other_index]) / 2.0
-                > CDA_WARNING_UP_TO_GAP_M
-                for other_index in range(particle_index)
-            ):
-                positions_m[particle_index] = candidate_position_m
-                break
-        else:
-            raise RuntimeError("could not generate a CDA-safe random configuration")
-
-    return positions_m, diameters_m
+    return generate_random_nonoverlapping_configuration(
+        diameters_m=np.resize(DIAMETER_CHOICES_M, particle_count),
+        seed=seed,
+        minimum_surface_gap_m=CDA_WARNING_UP_TO_GAP_M,
+    )
 
 
 def _solve_configuration(

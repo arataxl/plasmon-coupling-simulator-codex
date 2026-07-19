@@ -45,7 +45,7 @@ select {
 
 .page-layout {
   display: grid;
-  grid-template-columns: minmax(19rem, 25rem) minmax(0, 1fr);
+  grid-template-columns: minmax(24rem, 34rem) minmax(0, 1fr);
   gap: 1.25rem;
   max-width: 1200px;
   margin: 1.5rem auto;
@@ -71,6 +71,28 @@ fieldset {
   padding: 1rem;
   border: 1px solid #ccd7e3;
   border-radius: 0.5rem;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.7rem;
+}
+
+.preset-card {
+  display: grid;
+  align-content: start;
+  gap: 0.55rem;
+  padding: 0.7rem;
+  border: 1px solid #d6e0ea;
+  border-radius: 0.45rem;
+  background: #f9fbfd;
+}
+
+.preset-card h3 {
+  margin: 0;
+  color: #264b6c;
+  font-size: 0.96rem;
 }
 
 legend {
@@ -141,6 +163,97 @@ button:hover:not(:disabled) {
 button:disabled {
   cursor: not-allowed;
   background: #9aa9b9;
+}
+
+.compact-button {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.8rem;
+  background: #7a3f3f;
+}
+
+.particle-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #d6e0ea;
+  border-radius: 0.4rem;
+}
+
+.particle-table {
+  width: 100%;
+  min-width: 32rem;
+  border-collapse: collapse;
+}
+
+.particle-table th,
+.particle-table td {
+  padding: 0.35rem;
+  border-bottom: 1px solid #e0e7ef;
+  text-align: left;
+}
+
+.particle-table thead th {
+  background: #edf4f9;
+  color: #264b6c;
+  font-size: 0.78rem;
+}
+
+.particle-table tbody tr:last-child th,
+.particle-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.particle-table input {
+  min-width: 4.9rem;
+  padding: 0.38rem;
+}
+
+.geometry-validation {
+  min-height: 1.45rem;
+  margin: 0;
+  color: #296542;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.geometry-validation.has-warning {
+  color: #704000;
+}
+
+.geometry-validation.has-error {
+  color: #8e1a11;
+  font-weight: 700;
+}
+
+.geometry-preview {
+  min-height: 20rem;
+  border: 1px solid #d6e0ea;
+  border-radius: 0.45rem;
+}
+
+.progress-area {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.progress-area progress {
+  width: 100%;
+  height: 1rem;
+  accent-color: #136d86;
+}
+
+.progress-area .progress-message {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+#cancel-button {
+  background: #a23b00;
+}
+
+#cancel-button:hover:not(:disabled) {
+  background: #7e2e00;
 }
 
 .progress-message {
@@ -228,6 +341,18 @@ button:disabled {
   font-size: 0.9rem;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 @media (max-width: 850px) {
   .page-layout {
     grid-template-columns: 1fr;
@@ -235,6 +360,14 @@ button:disabled {
 
   .input-grid {
     grid-template-columns: 1fr;
+  }
+
+  .progress-area {
+    grid-template-columns: 1fr;
+  }
+
+  .progress-area .progress-message {
+    grid-column: auto;
   }
 
   .result-heading {

@@ -12,8 +12,8 @@ from src.schemas.simulation import SimulationInput
 class QcmResultMetadata(BaseModel):
     """QCM適用結果に必須の再現性メタデータ。
 
-    JSON/CSV出力機能は後続で実装する。この型は出力層が、暫定デジタイズ表の出典と
-    CDAへの縮約近似を落とさずに保持するための契約である。
+    この型は出力層が、暫定デジタイズ表の出典とCDAへの縮約近似を落とさずに
+    JSON往復させるための契約である。
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -66,7 +66,7 @@ class QcmResultMetadata(BaseModel):
 
 
 class CrossSectionsResult(BaseModel):
-    """基準波長におけるCDA断面積。断面積の単位はm^2。"""
+    """基準波長におけるCDA断面積と効率。断面積の単位はm^2。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -74,10 +74,14 @@ class CrossSectionsResult(BaseModel):
     c_ext_m2: float
     c_sca_m2: float
     c_abs_m2: float
+    geometric_cross_section_m2: float = Field(gt=0)
+    q_ext: float
+    q_sca: float
+    q_abs: float
 
 
 class SpectrumResult(BaseModel):
-    """CDAスペクトル。波長はnm、断面積はm^2。"""
+    """CDAスペクトル。波長はnm、断面積はm^2、効率は無次元。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -85,6 +89,10 @@ class SpectrumResult(BaseModel):
     c_ext_m2: list[float]
     c_sca_m2: list[float]
     c_abs_m2: list[float]
+    q_ext: list[float]
+    q_sca: list[float]
+    q_abs: list[float]
+    geometric_cross_section_m2: float = Field(gt=0)
 
     @model_validator(mode="after")
     def validate_matching_lengths(self) -> Self:
@@ -93,10 +101,24 @@ class SpectrumResult(BaseModel):
             len(self.c_ext_m2),
             len(self.c_sca_m2),
             len(self.c_abs_m2),
+            len(self.q_ext),
+            len(self.q_sca),
+            len(self.q_abs),
         }
         if len(lengths) != 1 or not self.wavelength_nm:
             raise ValueError("spectrum arrays must be non-empty and have matching lengths")
         return self
+
+
+class ResultProvenance(BaseModel):
+    """再計算時に固定すべきモデルと材料データの来歴。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    model_name: str = Field(min_length=1)
+    material_data_source: str = Field(min_length=1)
+    material_data_interpolation: str = Field(min_length=1)
+    software_version: str = Field(min_length=1)
 
 
 class SimulationResult(BaseModel):
@@ -108,4 +130,5 @@ class SimulationResult(BaseModel):
     cross_sections: CrossSectionsResult
     spectrum: SpectrumResult
     qcm_metadata: QcmResultMetadata
+    provenance: ResultProvenance
     warnings: list[str]

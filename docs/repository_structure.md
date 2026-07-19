@@ -3,7 +3,7 @@
 ## 位置付け
 
 本書は `docs/SPEC.md` と `docs/quantum_corrected_model_integration.md` を
-実装へ展開するための構成案である。以下のツリーは**実装時の目標構成**であり、
+実装へ展開するための構成案である。以下のツリーは現在の実装構成であり、
 Phase 1では依存定義、`src/physics/material_data.py`、
 `src/physics/mie_reference.py`、`src/schemas/simulation.py`、Test 1を作成した。
 Phase 2では `src/physics/polarizability.py`、`src/physics/green_tensor.py`、
@@ -30,7 +30,8 @@ Phase 2では `src/physics/polarizability.py`、`src/physics/green_tensor.py`、
 │   │   └── error_handlers.py          # 入力・計算失敗のHTTP応答への変換
 │   ├── services/
 │   │   ├── simulation_service.py      # APIと計算コアをつなぐ計算オーケストレーション
-│   │   └── job_manager.py             # 別プロセスの計算ジョブ、進捗、取消管理
+│   │   ├── job_manager.py             # ワーカースレッドの一時ジョブ、進捗、取消管理
+│   │   └── particle_layouts.py         # Test 5とUIで共有するランダム3D配置生成
 │   ├── physics/
 │   │   ├── material_data.py           # Au光学定数の補間と適用範囲検査
 │   │   ├── mie_reference.py           # 単一球の完全Mie参照計算
@@ -45,7 +46,6 @@ Phase 2では `src/physics/polarizability.py`、`src/physics/green_tensor.py`、
 │   │   └── exporters.py               # CSV/JSONの生成（サーバー側の永続保存はしない）
 │   └── schemas/
 │       ├── simulation.py              # 入力条件・粒子・光源のPydanticスキーマ
-│       ├── qcm.py                     # QCM表と出典情報のスキーマ
 │       └── result.py                  # スペクトル、警告、JSONメタデータのスキーマ
 ├── web/
 │   ├── index.html                     # 静的UIの入口
@@ -54,7 +54,7 @@ Phase 2では `src/physics/polarizability.py`、`src/physics/green_tensor.py`、
 │   ├── js/input_form.js                # 入力、単位表示、クライアント側の初期検査
 │   ├── js/progress.js                  # SSE進捗・キャンセル表示
 │   ├── js/results.js                   # Plotly表示、警告、メタデータ表示
-│   └── vendor/plotly.min.js            # ハッシュ検証済みの同梱資産
+│   └── vendor/plotly-2.24.1.min.js     # ハッシュ検証済みの同梱資産
 ├── data/
 │   ├── optical_constants/
 │   │   ├── au_johnson_christy_1972.csv
@@ -75,7 +75,8 @@ Phase 2では `src/physics/polarizability.py`、`src/physics/green_tensor.py`、
 │   ├── test_qcm_safety.py              # Validation Test 4
 │   ├── test_multiparticle_stability.py # Validation Test 5
 │   ├── test_io_reproducibility.py      # Validation Test 6
-│   └── test_api_sse.py                 # localhost/SSE/取消の補助的な統合試験
+│   ├── test_api_sse.py                 # localhost/SSEの補助的な統合試験
+│   └── test_cancellation.py            # 取消時の部分データ非返却・非保存試験
 └── docs/
     ├── SPEC.md
     ├── physics_assumptions.md
@@ -86,14 +87,12 @@ Phase 2では `src/physics/polarizability.py`、`src/physics/green_tensor.py`、
     └── repository_structure.md
 ```
 
-Phase 1・2の物理コアに加え、`data/qcm/`、QCM距離依存表、局所誘電率、4層のCDA縮約、
-Test 4の物理コア試験は実装済みである。Phase 4では `src/main.py`、`src/api/`、
-`src/services/simulation_service.py`、静的 `web/` を追加し、同期の `POST /simulate`、
-ブラウザ直ダウンロード、Test 4のAPI入力ブロックを実装した。SSE進捗・取消、JSON再読込、
-完全なCSV/JSON出力、Test 6は後続実装対象とする。
-CSV/JSONはブラウザへのダウンロードとして返し、計算結果を
-サーバー上の実行ディレクトリへ残さない。この方針により、取消時に部分データを
-保存しないというMVP要件を満たしやすくする。
+Phase 1〜4の物理コアと同期APIに加え、Phase 5で `src/io/exporters.py`、
+`src/io/importers.py`、`src/services/job_manager.py`、SSE API、取消試験、任意3D配置UIを
+追加した。CSV/JSONの正規化出力はメモリ上の文字列として組み立て、ブラウザへ直接
+ダウンロードする。計算結果をサーバー上の実行ディレクトリへ残さない。SSEジョブも
+実行中だけプロセス内メモリに存在し、取消時には局所的な部分配列を破棄して結果イベントを
+発行しない。
 
 ## 層の責務と依存方向
 
@@ -125,7 +124,7 @@ web (静的UI)
 | `src/schemas/qcm.py` | 表と出典情報を型付きで検証する。 | 必須フィールドが欠ける、または `qcm_parameter_status` が `provisional_digitized` 以外の場合は、MVPの暫定表として読込を拒否する。 |
 | `src/io/qcm_parameter_table.py` | CSV表を読み、列・数値・単調性を検証する。 | 表を読み込むだけで、出典メタデータを再解釈・改変しない。範囲判定は物理層に委譲する。 |
 | `src/physics/qcm.py` | 表から `log(gamma_g)` をPCHIP補間し、Drude局所誘電率と4層の補助ブリッジ双極子を構成する。 | 下限未満はエラー、上限超過は外挿せず媒質そのものの古典極限とする。CDA縮約は原論文のBEM/FEMと等価ではなく、Naの補足資料値や独自の指数関数を使わない。 |
-| `src/schemas/result.py` | 計算結果の `qcm_applied` と `QcmResultMetadata` を型付きで保持する。 | `qcm_applied=true` の結果では、`qcm_parameter_status`、出典、校正点、読取誤差、図、曲線、補間法、層数、CDA縮約と誤差注記を必須にする。JSON出力自体は後続である。 |
+| `src/schemas/result.py` | 計算結果の `qcm_applied` と `QcmResultMetadata` を型付きで保持する。 | `qcm_applied=true` の結果では、`qcm_parameter_status`、出典、校正点、読取誤差、図、曲線、補間法、層数、CDA縮約と誤差注記を必須にする。JSONの往復検証でもこの契約を維持する。 |
 | `src/io/exporters.py` | CSV/JSONを出力する。 | CSVはスペクトル列、JSONは完全な `QcmMetadata` を保持する。取消・失敗時はどちらも出力しない。 |
 | `src/api/` と `web/js/results.js` | API応答とUI注記を表示する。 | JSONの状態をそのまま伝え、0.5〜1 nm未満のQCM結果を「暫定デジタイズ値による参考値」と表示する。 |
 
@@ -138,7 +137,7 @@ QCM表の抽出手順、校正点、読取誤差の定義は
 | 領域 | 採用案 | 採用理由・条件 |
 | --- | --- | --- |
 | Web/API | FastAPI + uvicorn | SPECと既存Antigravity方針に合致する。`127.0.0.1`限定の静的配信、Pydanticスキーマ、SSEを一つのPythonプロセスで扱える。 |
-| ジョブ進捗 | FastAPIのSSE + `multiprocessing` | 既存READMEの「API応答と重い計算を分離する」方針を維持する。D-1に従い、SSEは進捗・取消のみを配信する。 |
+| ジョブ進捗 | FastAPIのSSE + 協調的ワーカースレッド | Windowsで追加依存やプロセス間の材料表シリアライズを増やさず、D-1に従いSSEを進捗・取消通知に限定する。取消はSciPyの一波長線形ソルバーを強制停止せず、波長点境界で反映する。 |
 | Mie参照解 | `miepython` | 既存READMEに採用予定として記載があるため継続候補とする。完全Mie解を自作せず利用し、ライブラリ版・Auデータ・波長格子を固定してTest 1の基準配列を版管理する。アプリ本体と同一ライブラリのその場計算だけを比較基準にはしない。 |
 | CDA / Green tensor | NumPy + SciPy | 複素配列、3N次元の線形方程式、数値状態の監視を明確に実装できる。MVPは最大20粒子（最大60自由度）であり、GPU・分散計算は不要である。 |
 | 入出力・単位変換 | Python標準の `json` / `csv` + Pydantic | 仕様で必要なCSV/JSONとスキーマ検証に十分であり、pandasはMVPの必須依存にしない。既存READMEのpandas記載は、実際の依存定義がないため削除する。 |

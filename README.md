@@ -4,12 +4,11 @@
 量子補正モデル（QCM）で条件探索するための、研究者・学生向けローカルWebアプリです。
 実験データの定量再現器や、BEM/DDA/FDTD/TDDFTの代替を目的にはしません。
 
-> 状態：Phase 4の同期API・静的UIの基礎まで実装済みです。Johnson and Christy材料データ、単一球の完全Mie参照計算、
+> 状態：Phase 5まで実装済みです。Johnson and Christy材料データ、単一球の完全Mie参照計算、
 > FCDA分極率、遅延 Green tensor、CDA中核、入力スキーマ、Validation Test 1〜3・5の
 > 基礎試験に加え、Fig. 2d由来の暫定 `gamma_g` 表、局所誘電率、4層のCDA縮約、Test 4の
-> 物理コア試験を実装済みです。`POST /simulate`、ローカルPlotly.js UI、ブラウザ直接の
-> 基本CSV/JSONダウンロード、Test 4のAPI入力ブロックを追加しました。SSE進捗・取消、
-> JSON再読込、効率を含む完全なTest 6は未実装です。
+> 物理コア試験を実装済みです。同期 `POST /simulate` に加え、SSE進捗・協調的取消、
+> 任意3D配置UI、CSV/JSONの正規化出力・JSON往復、Validation Test 6を実装しました。
 
 ## MVPで目指すこと
 
@@ -47,11 +46,11 @@ QCMの物理的根拠、暫定表の抽出方法、4層化の収束確認、限�
 ## 現在のアーキテクチャ
 
 - **計算コア**：Mie参照計算、FCDA分極率、Green tensor、CDA、QCMを `src/physics/` に分離する。
-- **API層**：FastAPI + uvicornの `POST /simulate` が、検証済み入力を同期計算し、結果を応答としてだけ返す。計算結果・部分結果をサーバーへ保存しない。
-- **サービス層**：`src/services/simulation_service.py` が単位変換、CDA/QCM実行、応答メタデータの組立てを担う。
-- **SSE**：進捗と取消状態だけを配信する計画は維持するが、今回の同期APIには未実装である。スペクトルは計算完了後に一括表示する。
-- **UI**：静的HTML/CSS/Vanilla JavaScriptと、ローカル同梱のPlotly.jsを `web/` から同一オリジン配信する。
-- **入出力**：現在のUIはブラウザ内で応答JSONと基本スペクトルCSVを直接ダウンロードする。サーバー側の永続保存は行わない。完全なCSV列・JSON再読込はTest 6で追加する。
+- **API層**：FastAPI + uvicornの同期 `POST /simulate` と、ジョブ開始・取消・SSE配信を提供する。いずれも計算結果をサーバーへ永続保存しない。
+- **サービス層**：`src/services/simulation_service.py` が単位変換、CDA/QCM実行、効率・来歴を含む応答メタデータの組立てを担う。`job_manager.py` はワーカースレッドで進捗と協調的取消を管理する。
+- **SSE**：進捗イベントは波長点の点数だけを送り、スペクトルは完了イベントで一括返却する（D-1）。取消時は、現在の一波長計算が終わった境界で停止し、部分スペクトルを返却・保存しない。
+- **UI**：静的HTML/CSS/Vanilla JavaScriptと、ローカル同梱のPlotly.jsを `web/` から同一オリジン配信する。各球の径とx/y/z座標を個別編集でき、二量体・正三角形三量体・Test 5と同じ棄却サンプリングを使うランダムクラスタをプリセットとして持つ。
+- **入出力**：CSVは波長、3種の断面積、3種の効率、集合体の幾何学的断面積を含む。JSONは入力、結果、QCM来歴、材料・モデル来歴を含む。正規化JSONはPydanticで再読込し、同じ入力を再計算できる。ブラウザのダウンロードもサーバー保存を行わない。
 
 目標ディレクトリツリー、各層の責務、テスト対応、技術選定は
 [docs/repository_structure.md](docs/repository_structure.md) に記載しています。
@@ -92,10 +91,20 @@ run_app.bat
 
 ### APIの基礎
 
-`POST /simulate` は `SimulationInput` を受け取り、基準波長の `cross_sections`（m²）と、
-波長範囲の `spectrum`（m²）をJSONで返します。波長範囲は `spectrum` の
+`POST /simulate` は `SimulationInput` を受け取り、基準波長の `cross_sections`（m²、効率付き）と、
+波長範囲の `spectrum`（m²、効率付き）をJSONで返します。波長範囲は `spectrum` の
 `start_wavelength_nm`、`end_wavelength_nm`、`step_nm` で指定します。同期APIでは計算時間を
-抑えるため、返せる格子点数を301点以下に制限しています。SSEと取消は後続Phaseで実装します。
+抑えるため、返せる格子点数を301点以下に制限しています。
+
+通常のUIは次の進捗付き経路を使います。
+
+- `POST /simulate/jobs`：計算を開始し、`job_id` を返す。SSE版は最大5,000波長点まで受け付ける。
+- `GET /simulate/stream/{job_id}`：波長点ごとの `progress`、最終の `complete`、取消時の `cancelled`、失敗時の `error` をSSEで返す。進捗には断面積などの部分データを含めない。
+- `POST /simulate/jobs/{job_id}/cancel`：取消を要求する。SciPyの一波長線形ソルバーは安全のため途中で強制終了せず、次の波長点へ進む前に中断する。
+
+UIの入力表は各粒子の径・x/y/z（nm）を最大20個まで編集でき、送信前にも全対の表面間
+ギャップを検査します。0.5 nm未満は送信しません。0.5〜1.0 nmの対はQCM自動適用を明示し、
+1〜5 nmの対にはCDA近似限界の注意を表示します。
 
 `0.5 ≤ gap < 1.0 nm` でQCMを自動適用した場合、`qcm_metadata` には
 `provisional_digitized`、Fig. 2d、対象曲線、校正点未提供、読取誤差、補間法、層数、
@@ -113,8 +122,10 @@ Phase 2までにTest 1、入力スキーマ、Test 2、Test 3、Test 5の基礎p
 加えて、Test 4のうち、暫定 `gamma_g` 表、局所Drude誘電率、CDAへの4層縮約、5.439 Å境界、
 3→4→5層感度を検証する物理コアpytestを実装済みです。QCM-CDA縮約は原論文のBEM/FEMと
 等価ではなく、参考値の傾向探索に限ります。Test 4のAPI入力ブロックとQCMメタデータ応答は
-`tests/test_api.py` で確認します。SSE、取消、Test 6、JSON再読込は後続Phaseで追加します。提出時には、実行環境・依存
-バージョン・pass実績を記録します。
+`tests/test_api.py` で確認します。`tests/test_io_reproducibility.py` はCSV/JSONの完全一致、
+効率定義、QCM来歴を含むJSON往復再計算を、`tests/test_api_sse.py` と
+`tests/test_cancellation.py` はSSEの完了一括返却と取消時の部分データ非返却を確認します。
+提出時には、実行環境・依存バージョン・pass実績を記録します。
 
 ## 開発におけるAI利用記録（Build Week提出用）
 

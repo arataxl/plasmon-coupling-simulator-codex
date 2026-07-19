@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.api.error_handlers import register_error_handlers
+from src.api.routers.events import router as events_router
 from src.api.routers.simulations import router as simulations_router
 
 
@@ -24,10 +25,11 @@ def create_app() -> FastAPI:
 
     application = FastAPI(
         title="Plasmonic Coupling Simulator",
-        version="0.1.0",
+        version="0.2.0",
     )
     register_error_handlers(application)
     application.include_router(simulations_router)
+    application.include_router(events_router)
     application.mount("/static", StaticFiles(directory=WEB_ROOT), name="static")
 
     @application.get("/", include_in_schema=False)

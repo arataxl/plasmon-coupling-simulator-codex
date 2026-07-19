@@ -78,7 +78,9 @@ window.PlasmonResults = (() => {
       return;
     }
     const spectrum = latestResult.spectrum;
-    const rows = ["wavelength_nm,c_ext_m2,c_sca_m2,c_abs_m2"];
+    const rows = [
+      "wavelength_nm,c_ext_m2,c_sca_m2,c_abs_m2,q_ext,q_sca,q_abs,geometric_cross_section_m2",
+    ];
     spectrum.wavelength_nm.forEach((wavelengthNm, index) => {
       rows.push(
         [
@@ -86,6 +88,10 @@ window.PlasmonResults = (() => {
           spectrum.c_ext_m2[index],
           spectrum.c_sca_m2[index],
           spectrum.c_abs_m2[index],
+          spectrum.q_ext[index],
+          spectrum.q_sca[index],
+          spectrum.q_abs[index],
+          spectrum.geometric_cross_section_m2,
         ].join(","),
       );
     });
