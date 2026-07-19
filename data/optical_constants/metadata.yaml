@@ -1,0 +1,24 @@
+# data/optical_constants/metadata.yaml
+
+material: Au
+source:
+  authors: "Johnson, P. B.; Christy, R. W."
+  title: "Optical Constants of the Noble Metals"
+  journal: "Physical Review B"
+  volume: 6
+  pages: "4370-4379"
+  year: 1972
+  doi: "10.1103/PhysRevB.6.4370"
+database: "RefractiveIndex.INFO"
+database_url: "https://refractiveindex.info/?shelf=main&book=Au&page=Johnson"
+csv_download_url: "https://refractiveindex.info/data_csv.php?datafile=database/data/main/Au/nk/Johnson.yml"
+original_wavelength_unit: micrometer
+converted_wavelength_unit: nanometer
+wavelength_range_original_um: [0.1879, 1.937]
+wavelength_range_used_nm: [400, 1000]
+data_type: bulk_thin_film
+caution: >
+  バルク薄膜の光学定数であり、ナノ粒子の表面散乱、粒径依存減衰、
+  結晶性、配位子層は反映していない。
+  5 nm 級粒子では表面散乱補正（size-corrected damping）を別途検討すること。
+interpolation: linear_or_cubic_spline（コード側で選択）
