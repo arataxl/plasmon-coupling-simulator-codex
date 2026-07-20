@@ -14,3 +14,12 @@ docs/Faraday_Discussion_178_151-183_2015.pdf
 .venv/
 **/__pycache__/
 *.pyc
+
+# Local secrets and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
