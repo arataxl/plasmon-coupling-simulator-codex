@@ -146,3 +146,5 @@ AIの出力は物理的妥当性や文献値の証明ではありません。実
 - [docs/quantum_corrected_model_integration.md](docs/quantum_corrected_model_integration.md)：QCM統合・暫定デジタイズ表の扱い
 - [docs/validation_plan.md](docs/validation_plan.md)：Test 1〜6
 - [docs/references.md](docs/references.md)：採用文献
+- [LICENSE](LICENSE)：リポジトリ著作権者が作成したソースコード・文書に適用するMIT License
+- [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)：第三者ソフトウェア、データ、論文資料に関する通知

@@ -93,3 +93,5 @@ Humans retained responsibility for identifying issues in real browser use, choos
 - [docs/quantum_corrected_model_integration.md](docs/quantum_corrected_model_integration.md): QCM integration and provisional digitized-table policy
 - [docs/validation_plan.md](docs/validation_plan.md): Validation Tests 1–6
 - [docs/references.md](docs/references.md): cited literature
+- [LICENSE](LICENSE): MIT License for original repository source code and documentation
+- [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md): third-party software, data, and scholarly-material notices
