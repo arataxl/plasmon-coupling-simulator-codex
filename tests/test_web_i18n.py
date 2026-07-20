@@ -61,6 +61,23 @@ def test_i18n_loader_precedes_ui_modules() -> None:
     assert 'data-language="en"' in index
 
 
+def test_english_is_the_fixed_initial_language() -> None:
+    """ブラウザlocaleに依存せず、初回表示はEnglishへ翻訳する。"""
+    index = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+    i18n = (WEB_ROOT / "js" / "i18n.js").read_text(encoding="utf-8")
+
+    assert '<html lang="en">' in index
+    assert 'const defaultLanguage = "en";' in i18n
+    assert "navigator.language" not in i18n
+
+
+def test_random_cluster_uses_a_twenty_nanometre_default_maximum_gap() -> None:
+    """既定のランダムクラスタは過度に疎な250 nm上限を使わない。"""
+    index = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+
+    assert 'id="random-maximum-gap-nm" type="number" min="5" step="0.1" value="20"' in index
+
+
 def test_index_translation_attributes_reference_catalogue_keys() -> None:
     """静的DOMの翻訳属性に未定義キーを置かない。"""
     index = (WEB_ROOT / "index.html").read_text(encoding="utf-8")

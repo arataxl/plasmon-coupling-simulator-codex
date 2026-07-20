@@ -1,5 +1,5 @@
 window.PlasmonI18n = (() => {
-  const defaultLanguage = "ja";
+  const defaultLanguage = "en";
   const supportedLanguages = new Set(["ja", "en"]);
   let currentLanguage = defaultLanguage;
   let messages = null;
@@ -89,7 +89,7 @@ window.PlasmonI18n = (() => {
     document.querySelectorAll("[data-language]").forEach((button) => {
       button.addEventListener("click", () => {
         setLanguage(button.dataset.language).catch(() => {
-          // 日本語の初期HTMLを残し、言語切替失敗を計算機能へ波及させない。
+          // 初期HTMLを残し、言語切替失敗を計算機能へ波及させない。
         });
       });
     });
