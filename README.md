@@ -74,9 +74,11 @@ Run validation and lint checks with:
 
 The test suite covers complete Mie reference calculations, the isolated CDA limit, dimer coupling, QCM safety and integration, multi-particle stability, and I/O reproducibility. The formal tests and thresholds are defined in [docs/validation_plan.md](docs/validation_plan.md).
 
-## Human–Codex collaboration record
+## Human–GPT-5.6–Codex collaboration record
 
-This project used an iterative human-review and Codex-implementation cycle. AI output was not treated as evidence for physics, experimental values, or literature claims.
+This project used an iterative human-review, GPT-5.6 analysis, and Codex-implementation cycle. AI output was not treated as evidence for physics, experimental values, or literature claims.
+
+GPT-5.6 was used to analyze requirements, review browser-test findings and audit results, identify cross-cutting consistency risks, and formulate implementation plans. Codex was used to implement approved changes, run tests and checks, maintain documentation, and report verification results.
 
 | Human discovery or decision | Codex implementation work |
 | --- | --- |
@@ -84,7 +86,7 @@ This project used an iterative human-review and Codex-implementation cycle. AI o
 | Human review identified that fixed-pixel 3D markers did not show physical particle size under zoom. | Replaced them with real-diameter `mesh3d` sphere geometry, labels, equal-axis scaling, and rendering safeguards. |
 | Audit review found that the QCM range and the 1–5 nm classical-CDA warning were described inconsistently. | Separated structured QCM and CDA warning codes, translated them in both UI languages, added boundary tests, and synchronized the documentation. |
 
-Humans retained responsibility for identifying issues in real browser use, choosing the product and physics scope, approving physical assumptions, and reviewing completed behaviour. Codex implemented the approved changes, maintained tests and documentation, and reported verification results.
+Humans retained responsibility for identifying issues in real browser use, choosing the product and physics scope, approving physical assumptions, and reviewing completed behaviour. GPT-5.6 supported requirement analysis, audit interpretation, and prioritization of proposed changes. Codex implemented the approved changes, maintained tests and documentation, and reported verification results.
 
 ## References and project documents
 
