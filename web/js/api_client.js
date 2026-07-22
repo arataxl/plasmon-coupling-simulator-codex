@@ -2,6 +2,7 @@ window.PlasmonApi = (() => {
   const errorMessageKeyByCode = Object.freeze({
     invalid_input: "api.invalidInput",
     simulation_failed: "api.simulateFailed",
+    large_cda_requires_stream: "api.largeCdaRequiresStream",
     qcm_metadata_unavailable: "api.qcmMetadataUnavailable",
     material_data_unavailable: "api.materialDataUnavailable",
     qcm_parameter_table_unavailable: "api.qcmParameterTableUnavailable",

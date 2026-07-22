@@ -6,7 +6,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from src.schemas.simulation import SimulationInput
+from src.schemas.simulation import SimulationRequest
 
 
 class QcmResultMetadata(BaseModel):
@@ -60,6 +60,44 @@ class QcmResultMetadata(BaseModel):
         if missing_fields:
             raise ValueError(
                 "QCM-applied results require metadata fields: "
+                + ", ".join(missing_fields)
+            )
+        return self
+
+
+class ExperimentalQuadrupoleMetadata(BaseModel):
+    """Provenance for the opt-in, incomplete ED--EQ experimental extension."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    applied: bool
+    model: str | None = None
+    source: str | None = None
+    included_terms: str | None = None
+    omitted_terms: str | None = None
+    energy_conservation_note: str | None = None
+    intended_use: str | None = None
+
+    @model_validator(mode="after")
+    def require_limitations_when_applied(self) -> Self:
+        if not self.applied:
+            return self
+        required_fields = (
+            "model",
+            "source",
+            "included_terms",
+            "omitted_terms",
+            "energy_conservation_note",
+            "intended_use",
+        )
+        missing_fields = [
+            field_name
+            for field_name in required_fields
+            if getattr(self, field_name) is None
+        ]
+        if missing_fields:
+            raise ValueError(
+                "experimental quadrupole results require metadata fields: "
                 + ", ".join(missing_fields)
             )
         return self
@@ -133,6 +171,7 @@ class ResultWarning(BaseModel):
 
     code: Literal[
         "cda_gap_limitation",
+        "experimental_quadrupole_coupling",
         "qcm_applied",
         "qcm_classical_limit",
         "qcm_validation_override",
@@ -145,9 +184,10 @@ class SimulationResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    input: SimulationInput
+    input: SimulationRequest
     cross_sections: CrossSectionsResult
     spectrum: SpectrumResult
     qcm_metadata: QcmResultMetadata
+    experimental_quadrupole_metadata: ExperimentalQuadrupoleMetadata
     provenance: ResultProvenance
     warnings: list[ResultWarning]

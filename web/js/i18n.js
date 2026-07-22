@@ -1,5 +1,6 @@
 window.PlasmonI18n = (() => {
-  const defaultLanguage = "en";
+  const defaultLanguage = "ja";
+  const languageStorageKey = "plasmon-coupling-simulator.language.v1";
   const supportedLanguages = new Set(["ja", "en"]);
   let currentLanguage = defaultLanguage;
   let messages = null;
@@ -67,7 +68,24 @@ window.PlasmonI18n = (() => {
     return loadedMessages;
   }
 
-  async function setLanguage(language) {
+  function rememberedLanguage() {
+    try {
+      const language = window.localStorage.getItem(languageStorageKey);
+      return supportedLanguages.has(language) ? language : defaultLanguage;
+    } catch (_error) {
+      return defaultLanguage;
+    }
+  }
+
+  function rememberLanguage(language) {
+    try {
+      window.localStorage.setItem(languageStorageKey, language);
+    } catch (_error) {
+      // localStorage may be unavailable in privacy-restricted browser contexts.
+    }
+  }
+
+  async function setLanguage(language, { remember = true } = {}) {
     const nextLanguage = supportedLanguages.has(language) ? language : defaultLanguage;
     try {
       messages = await loadLanguage(nextLanguage);
@@ -80,12 +98,21 @@ window.PlasmonI18n = (() => {
         throw error;
       }
     }
+    if (remember) {
+      rememberLanguage(currentLanguage);
+    }
     applyTranslations();
     window.dispatchEvent(new CustomEvent("plasmonlanguagechange", { detail: { language: currentLanguage } }));
   }
 
   async function initialize() {
-    await setLanguage(defaultLanguage);
+    try {
+      await setLanguage(rememberedLanguage(), { remember: false });
+    } finally {
+      // 保存済みの言語を読み終えるまで静的な日本語HTMLを見せないことで、
+      // 英語を選択済みの利用者に日本語→英語のちらつきを見せない。
+      document.documentElement.dataset.uiReady = "true";
+    }
     document.querySelectorAll("[data-language]").forEach((button) => {
       button.addEventListener("click", () => {
         setLanguage(button.dataset.language).catch(() => {

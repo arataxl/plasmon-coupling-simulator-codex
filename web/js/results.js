@@ -2,6 +2,10 @@ window.PlasmonResults = (() => {
   const squareNanometresPerSquareMetre = 1.0e18;
   let latestResult = null;
   let latestDownloadMetadata = null;
+  let selectedHistoryIds = new Set();
+  let comparisonActive = false;
+  let comparisonError = null;
+  let detailHistoryEntry = null;
 
   function t(key, parameters) {
     return window.PlasmonI18n.t(key, parameters);
@@ -118,6 +122,9 @@ window.PlasmonResults = (() => {
     const spectrum = result.input.spectrum;
     const minimumGapNm = minimumSurfaceGapNm(particles);
     const qcmApplied = Boolean(result.qcm_metadata?.qcm_applied);
+    const experimentalQuadrupoleApplied = Boolean(
+      result.experimental_quadrupole_metadata?.applied,
+    );
     const placement = {
       type: layoutType(particles.length),
       fingerprint: layoutFingerprint(particles),
@@ -141,6 +148,8 @@ window.PlasmonResults = (() => {
         step: spectrum.step_nm,
       },
       qcm_applied: qcmApplied,
+      experimental_quadrupole_coupling: experimentalQuadrupoleApplied,
+      experimental_quadrupole_metadata: result.experimental_quadrupole_metadata ?? null,
       result_timestamp_utc: timestampUtc,
     };
     const filenameStem = [
@@ -151,6 +160,7 @@ window.PlasmonResults = (() => {
       `gap${minimumGapNm === null ? "na" : formatFileNumber(minimumGapNm)}nm`,
       `wl${formatFileNumber(spectrum.start_wavelength_nm)}-${formatFileNumber(spectrum.end_wavelength_nm)}s${formatFileNumber(spectrum.step_nm)}nm`,
       `qcm-${qcmApplied ? "on" : "off"}`,
+      `ed-eq-${experimentalQuadrupoleApplied ? "on" : "off"}`,
       timestampToken(timestampUtc),
     ].join("_");
     return { ...conditions, filename_stem: filenameStem };
@@ -158,6 +168,7 @@ window.PlasmonResults = (() => {
 
   const warningTranslationKeyByCode = Object.freeze({
     cda_gap_limitation: "warning.cdaGapLimitation",
+    experimental_quadrupole_coupling: "warning.experimentalQuadrupoleCoupling",
     qcm_applied: "warning.qcmApplied",
     qcm_classical_limit: "warning.qcmClassicalLimit",
     qcm_validation_override: "warning.qcmValidationOverride",
@@ -214,6 +225,8 @@ window.PlasmonResults = (() => {
   }
 
   function renderResult(result, { preserveDownloadMetadata = false } = {}) {
+    comparisonActive = false;
+    clearComparisonError();
     latestResult = result;
     if (!preserveDownloadMetadata || !latestDownloadMetadata) {
       latestDownloadMetadata = buildDownloadMetadata(result);
@@ -225,21 +238,21 @@ window.PlasmonResults = (() => {
       {
         x: spectrum.wavelength_nm,
         y: toSquareNanometres(spectrum.c_ext_m2),
-        name: "Cext",
+        name: t("result.cExt"),
         mode: "lines",
         line: { color: "#1769aa", width: 3 },
       },
       {
         x: spectrum.wavelength_nm,
         y: toSquareNanometres(spectrum.c_sca_m2),
-        name: "Csca",
+        name: t("result.cSca"),
         mode: "lines",
         line: { color: "#15803d", width: 2 },
       },
       {
         x: spectrum.wavelength_nm,
         y: toSquareNanometres(spectrum.c_abs_m2),
-        name: "Cabs",
+        name: t("result.cAbs"),
         mode: "lines",
         line: { color: "#b42318", width: 2 },
       },
@@ -264,6 +277,14 @@ window.PlasmonResults = (() => {
     document.getElementById("download-json").disabled = false;
   }
 
+  function completeResult(result) {
+    latestResult = result;
+    latestDownloadMetadata = buildDownloadMetadata(result);
+    const entries = window.PlasmonHistoryStore.add(result, latestDownloadMetadata);
+    renderResult(result, { preserveDownloadMetadata: true });
+    renderHistory(entries);
+  }
+
   function metadataCommentLines(metadata) {
     return [
       "# plasmon_coupling_simulator_download_metadata",
@@ -276,6 +297,8 @@ window.PlasmonResults = (() => {
       `# minimum_surface_gap_nm=${metadata.minimum_surface_gap_nm ?? "not_applicable"}`,
       `# wavelength_range_nm=${metadata.wavelength_range_nm.start},${metadata.wavelength_range_nm.end},step=${metadata.wavelength_range_nm.step}`,
       `# qcm_applied=${metadata.qcm_applied}`,
+      `# experimental_quadrupole_coupling=${metadata.experimental_quadrupole_coupling}`,
+      `# experimental_quadrupole_model=${metadata.experimental_quadrupole_metadata?.model ?? "not_applied"}`,
     ];
   }
 
@@ -286,7 +309,7 @@ window.PlasmonResults = (() => {
     const spectrum = latestResult.spectrum;
     const rows = [
       ...metadataCommentLines(latestDownloadMetadata),
-      "wavelength_nm,c_ext_m2,c_sca_m2,c_abs_m2,q_ext,q_sca,q_abs,geometric_cross_section_m2",
+      "wavelength_nm,c_ext_m2,c_sca_m2,c_abs_m2,q_ext,q_sca,q_abs,geometric_cross_section_m2,experimental_quadrupole_coupling",
     ];
     spectrum.wavelength_nm.forEach((wavelengthNm, index) => {
       rows.push(
@@ -299,6 +322,7 @@ window.PlasmonResults = (() => {
           spectrum.q_sca[index],
           spectrum.q_abs[index],
           spectrum.geometric_cross_section_m2,
+          latestDownloadMetadata.experimental_quadrupole_coupling,
         ].join(","),
       );
     });
@@ -324,15 +348,387 @@ window.PlasmonResults = (() => {
     );
   }
 
+  function historyEntryLabel(entry) {
+    const timestamp = new Date(entry.timestamp_utc).toLocaleString();
+    const modeKey = entry.calculation_mode === "exact_mie"
+      ? "history.modeExactMie"
+      : "history.modeCda";
+    return t("history.entry", {
+      timestamp,
+      particleCount: entry.particle_count,
+      mode: t(modeKey),
+      qcm: entry.qcm_applied ? t("history.qcmOn") : t("history.qcmOff"),
+    });
+  }
+
+  function displayedParticleValue(value) {
+    const rounded = formatNumber(Number(value), 1);
+    return rounded === null ? t("result.missing") : String(rounded);
+  }
+
+  function particlesForHistoryEntry(entry) {
+    return Array.isArray(entry?.input?.particles) ? entry.input.particles : [];
+  }
+
+  function particleText(particle, index, translationKey) {
+    return t(translationKey, {
+      index: index + 1,
+      diameterNm: displayedParticleValue(particle.diameter_nm),
+      xNm: displayedParticleValue(particle.x_nm),
+      yNm: displayedParticleValue(particle.y_nm),
+      zNm: displayedParticleValue(particle.z_nm),
+    });
+  }
+
+  function historyParticleSummary(entry) {
+    const particles = particlesForHistoryEntry(entry);
+    const maximumShownParticles = 3;
+    const summary = particles
+      .slice(0, maximumShownParticles)
+      .map((particle, index) => particleText(particle, index, "history.particleCompact"));
+    const remainingCount = particles.length - summary.length;
+    if (remainingCount > 0) {
+      summary.push(t("history.additionalParticles", { count: remainingCount }));
+    }
+    return summary.join(" / ") || t("result.missing");
+  }
+
+  function renderHistoryDetails(entry) {
+    const summary = document.getElementById("history-detail-summary");
+    const list = document.getElementById("history-detail-particles");
+    if (!summary || !list) {
+      return;
+    }
+    summary.textContent = historyEntryLabel(entry);
+    list.replaceChildren();
+    particlesForHistoryEntry(entry).forEach((particle, index) => {
+      const item = document.createElement("li");
+      item.textContent = particleText(particle, index, "history.particleDetail");
+      list.append(item);
+    });
+  }
+
+  function showHistoryDetails(entry) {
+    const dialog = document.getElementById("history-detail-dialog");
+    if (!dialog) {
+      return;
+    }
+    detailHistoryEntry = entry;
+    renderHistoryDetails(entry);
+    if (dialog.open) {
+      return;
+    }
+    if (typeof dialog.showModal === "function") {
+      dialog.showModal();
+    } else {
+      dialog.setAttribute("open", "");
+    }
+  }
+
+  function closeHistoryDetails() {
+    const dialog = document.getElementById("history-detail-dialog");
+    if (!dialog) {
+      return;
+    }
+    if (typeof dialog.close === "function" && dialog.open) {
+      dialog.close();
+    } else {
+      dialog.removeAttribute("open");
+      detailHistoryEntry = null;
+    }
+  }
+
+  function historyFilename(entry, extension) {
+    return `${entry.download_metadata.filename_stem}_history.${extension}`;
+  }
+
+  function renderHistory(entries = window.PlasmonHistoryStore.read()) {
+    const list = document.getElementById("history-list");
+    if (!list) {
+      return;
+    }
+    selectedHistoryIds = new Set(
+      [...selectedHistoryIds].filter((entryId) =>
+        entries.some((entry) => entry.id === entryId),
+      ),
+    );
+    list.replaceChildren();
+    if (entries.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "history-empty";
+      empty.textContent = t("history.empty");
+      list.append(empty);
+    }
+    entries.forEach((entry) => {
+      const row = document.createElement("div");
+      row.className = "history-entry";
+      const select = document.createElement("input");
+      select.type = "checkbox";
+      select.checked = selectedHistoryIds.has(entry.id);
+      select.setAttribute("aria-label", t("history.select"));
+      select.addEventListener("change", () => {
+        if (select.checked) {
+          selectedHistoryIds.add(entry.id);
+        } else {
+          selectedHistoryIds.delete(entry.id);
+        }
+        updateHistoryControls(entries);
+        if (comparisonActive) {
+          if (selectedHistoryIds.size >= 2) {
+            compareSelectedHistory();
+          } else if (latestResult) {
+            renderResult(latestResult, { preserveDownloadMetadata: true });
+          }
+        }
+      });
+      const information = document.createElement("div");
+      information.className = "history-entry-info";
+      const label = document.createElement("span");
+      label.className = "history-entry-label";
+      label.textContent = historyEntryLabel(entry);
+      const particleSummary = document.createElement("span");
+      particleSummary.className = "history-entry-particle-summary";
+      particleSummary.textContent = historyParticleSummary(entry);
+      information.append(label, particleSummary);
+      const details = document.createElement("button");
+      details.type = "button";
+      details.className = "button-secondary history-entry-action history-detail-button";
+      details.textContent = t("history.details");
+      details.addEventListener("click", () => showHistoryDetails(entry));
+      const download = document.createElement("button");
+      download.type = "button";
+      download.className = "button-secondary history-entry-action";
+      download.textContent = t("history.downloadCsv");
+      download.addEventListener("click", () => {
+        downloadBlob(
+          historyFilename(entry, "csv"),
+          window.PlasmonHistoryStore.csvForEntry(entry),
+          "text/csv;charset=utf-8",
+        );
+      });
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "button-secondary history-entry-action";
+      remove.textContent = t("history.delete");
+      remove.addEventListener("click", () => {
+        window.PlasmonHistoryStore.remove(entry.id);
+        selectedHistoryIds.delete(entry.id);
+        if (comparisonActive && selectedHistoryIds.size < 2 && latestResult) {
+          renderResult(latestResult, { preserveDownloadMetadata: true });
+        }
+        renderHistory();
+      });
+      row.append(select, information, details, download, remove);
+      list.append(row);
+    });
+    updateHistoryControls(entries);
+  }
+
+  function updateHistoryControls(entries = window.PlasmonHistoryStore.read()) {
+    const compare = document.getElementById("history-compare");
+    const exportAll = document.getElementById("history-download-all");
+    const clear = document.getElementById("history-clear");
+    if (!compare || !exportAll || !clear) {
+      return;
+    }
+    compare.disabled = selectedHistoryIds.size < 2;
+    exportAll.disabled = entries.length === 0;
+    clear.disabled = entries.length === 0;
+  }
+
+  const comparisonQuantityTranslationKey = Object.freeze({
+    c_ext: "result.cExt",
+    c_sca: "result.cSca",
+    c_abs: "result.cAbs",
+  });
+
+  function comparisonControls() {
+    const quantity = document.getElementById("history-compare-quantity");
+    const normalizationMode = document.getElementById("history-normalization-mode");
+    const referenceWavelength = document.getElementById("history-reference-wavelength-nm");
+    if (!quantity || !normalizationMode || !referenceWavelength) {
+      return null;
+    }
+    return {
+      quantity: quantity.value,
+      normalization: {
+        mode: normalizationMode.value,
+        referenceWavelengthNm: Number(referenceWavelength.value),
+      },
+    };
+  }
+
+  function updateComparisonSettingsVisibility() {
+    const normalizationMode = document.getElementById("history-normalization-mode");
+    const referenceContainer = document.getElementById(
+      "history-reference-wavelength-container",
+    );
+    const referenceWavelength = document.getElementById("history-reference-wavelength-nm");
+    if (!normalizationMode || !referenceContainer || !referenceWavelength) {
+      return;
+    }
+    const requiresReference = normalizationMode.value === "reference";
+    referenceContainer.hidden = !requiresReference;
+    referenceWavelength.disabled = !requiresReference;
+  }
+
+  function comparisonErrorText(error) {
+    const wavelengthNm = displayedParticleValue(Number(error?.parameters?.wavelengthNm));
+    if (error?.code === "invalid_reference_wavelength") {
+      return t("history.referenceWavelengthRequired");
+    }
+    if (error?.code === "reference_wavelength_out_of_range") {
+      return t("history.referenceOutOfRange", { wavelengthNm });
+    }
+    if (error?.code === "normalization_zero") {
+      return t("history.normalizationZero");
+    }
+    return t("api.simulateFailed");
+  }
+
+  function renderComparisonError() {
+    const target = document.getElementById("history-comparison-error");
+    if (!target) {
+      return;
+    }
+    target.hidden = comparisonError === null;
+    target.textContent = comparisonError === null ? "" : comparisonErrorText(comparisonError);
+  }
+
+  function clearComparisonError() {
+    comparisonError = null;
+    renderComparisonError();
+  }
+
+  function showComparisonError(error) {
+    comparisonError = error;
+    renderComparisonError();
+  }
+
+  function refreshActiveComparison() {
+    if (comparisonActive && selectedHistoryIds.size >= 2) {
+      compareSelectedHistory();
+    }
+  }
+
+  function comparisonYAxisTitle(quantity, normalizationMode) {
+    if (normalizationMode === "absolute") {
+      return t("result.yAxis");
+    }
+    return t("history.normalizedYAxis", {
+      quantity: t(comparisonQuantityTranslationKey[quantity]),
+    });
+  }
+
+  function compareSelectedHistory() {
+    const entries = window.PlasmonHistoryStore.read().filter((entry) =>
+      selectedHistoryIds.has(entry.id),
+    );
+    if (entries.length < 2) {
+      return;
+    }
+    const controls = comparisonControls();
+    if (!controls) {
+      return;
+    }
+    let series;
+    try {
+      series = window.PlasmonHistoryComparison.buildSeries(
+        entries,
+        controls.quantity,
+        controls.normalization,
+      );
+    } catch (error) {
+      showComparisonError(error);
+      return;
+    }
+    clearComparisonError();
+    comparisonActive = true;
+    const colours = ["#1769aa", "#b42318", "#15803d", "#7c3aed", "#d97706", "#0f766e"];
+    const traces = series.map((item, index) => ({
+      x: item.wavelengthsNm,
+      y: item.values,
+      name: historyEntryLabel(item.entry),
+      mode: "lines",
+      line: { color: colours[index % colours.length], width: 2 },
+    }));
+    window.Plotly.newPlot(
+      "spectrum-plot",
+      traces,
+      {
+        margin: { t: 24, r: 20, b: 58, l: 72 },
+        xaxis: { title: t("result.xAxis") },
+        yaxis: { title: comparisonYAxisTitle(controls.quantity, controls.normalization.mode) },
+        legend: { orientation: "h", y: 1.12 },
+        paper_bgcolor: "#ffffff",
+        plot_bgcolor: "#ffffff",
+      },
+      { responsive: true, displaylogo: false },
+    );
+  }
+
+  function downloadAllHistory() {
+    const entries = window.PlasmonHistoryStore.read();
+    if (entries.length === 0) {
+      return;
+    }
+    downloadBlob(
+      "plasmon_history.csv",
+      `${window.PlasmonHistoryStore.csvForEntries(entries)}\n`,
+      "text/csv;charset=utf-8",
+    );
+  }
+
   function initialize() {
     document.getElementById("download-csv").addEventListener("click", downloadCsv);
     document.getElementById("download-json").addEventListener("click", downloadJson);
-    window.addEventListener("plasmonlanguagechange", () => {
+    document.getElementById("history-compare").addEventListener("click", compareSelectedHistory);
+    document.getElementById("history-compare-quantity").addEventListener("change", refreshActiveComparison);
+    document.getElementById("history-normalization-mode").addEventListener("change", () => {
+      updateComparisonSettingsVisibility();
+      const referenceWavelength = document.getElementById("history-reference-wavelength-nm");
+      if (referenceWavelength.value.trim() !== "" || referenceWavelength.disabled) {
+        refreshActiveComparison();
+      }
+    });
+    document
+      .getElementById("history-reference-wavelength-nm")
+      .addEventListener("change", refreshActiveComparison);
+    document.getElementById("history-download-all").addEventListener("click", downloadAllHistory);
+    document.getElementById("history-clear").addEventListener("click", () => {
+      window.PlasmonHistoryStore.clear();
+      selectedHistoryIds = new Set();
+      comparisonActive = false;
+      clearComparisonError();
       if (latestResult) {
         renderResult(latestResult, { preserveDownloadMetadata: true });
+      }
+      renderHistory();
+    });
+    document.getElementById("history-detail-close").addEventListener("click", closeHistoryDetails);
+    document.getElementById("history-detail-dialog").addEventListener("close", () => {
+      detailHistoryEntry = null;
+    });
+    updateComparisonSettingsVisibility();
+    renderHistory();
+    window.addEventListener("plasmonlanguagechange", () => {
+      const shouldRenderComparison = comparisonActive && selectedHistoryIds.size >= 2;
+      if (latestResult && !shouldRenderComparison) {
+        renderResult(latestResult, {
+          preserveDownloadMetadata: true,
+        });
+      }
+      renderHistory();
+      if (detailHistoryEntry) {
+        renderHistoryDetails(detailHistoryEntry);
+      }
+      if (shouldRenderComparison) {
+        compareSelectedHistory();
+      } else {
+        renderComparisonError();
       }
     });
   }
 
-  return { initialize, renderResult };
+  return { completeResult, initialize, renderResult };
 })();

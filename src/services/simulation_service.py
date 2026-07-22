@@ -20,9 +20,14 @@ from src.physics.cda_solver import (
     CdaWarning,
 )
 from src.physics.material_data import MaterialDataError, OpticalConstants
+from src.physics.mie_reference import (
+    MieSpectrum,
+    calculate_exact_single_sphere_mie_spectrum,
+)
 from src.physics.qcm import GammaGParameterTable, QcmParameterError
 from src.schemas.result import (
     CrossSectionsResult,
+    ExperimentalQuadrupoleMetadata,
     QcmResultMetadata,
     ResultProvenance,
     ResultWarning,
@@ -30,9 +35,12 @@ from src.schemas.result import (
     SpectrumResult,
 )
 from src.schemas.simulation import (
+    ExactMieSimulationInput,
+    MAX_QCM_CDA_PARTICLES,
     MAX_STREAM_SPECTRUM_POINTS,
     MAX_SYNCHRONOUS_SPECTRUM_POINTS,
     SimulationInput,
+    SimulationRequest,
     SpectrumRangeInput,
 )
 
@@ -49,9 +57,29 @@ QCM_MODEL_ERROR_ESTIMATE = (
     "BEM/DDA reference"
 )
 MODEL_NAME = "FCDA-CDA with QCM auxiliary bridge dipoles"
+EXPERIMENTAL_QUADRUPOLE_MODEL_NAME = (
+    "FCDA-CDA with QCM auxiliary bridge dipoles and experimental electric dipole--quadrupole coupling"
+)
+EXPERIMENTAL_QUADRUPOLE_SOURCE = (
+    "Evlyukhin et al. (2012), DOI: 10.1103/PhysRevB.85.245411, Eqs. (1)-(2), (7), (16), and (23)-(28)"
+)
+EXPERIMENTAL_QUADRUPOLE_INCLUDED_TERMS = (
+    "electric dipoles, single-sphere electric quadrupoles from Mie a2, and approximate dipole--quadrupole coupling"
+)
+EXPERIMENTAL_QUADRUPOLE_OMITTED_TERMS = (
+    "quadrupole--quadrupole coupling, magnetic dipoles, magnetic quadrupoles, and higher multipoles"
+)
+EXPERIMENTAL_QUADRUPOLE_ENERGY_NOTE = (
+    "The incomplete multipole truncation does not guarantee exact energy conservation."
+)
+EXPERIMENTAL_QUADRUPOLE_INTENDED_USE = (
+    "Qualitative near-infrared trend exploration only; not quantitative validation."
+)
+EXACT_SINGLE_SPHERE_MIE_MODEL_NAME = "Exact single-sphere Mie theory (all orders)"
 MATERIAL_DATA_SOURCE = "Johnson and Christy (1972) Au n + ik dataset"
 MATERIAL_DATA_INTERPOLATION = "linear interpolation of n and k; no extrapolation"
 SOFTWARE_VERSION = "0.2.0"
+MAX_SYNCHRONOUS_CDA_PARTICLES = MAX_QCM_CDA_PARTICLES
 
 
 class SimulationServiceError(RuntimeError):
@@ -75,6 +103,12 @@ class QcmMetadataUnavailableError(SimulationServiceError):
 
     status_code = 503
     error_code = "qcm_metadata_unavailable"
+
+
+class SimulationRequiresStreamingError(SimulationServiceError):
+    """大規模CDAを同期APIで実行しないための明示的な拒否。"""
+
+    error_code = "large_cda_requires_stream"
 
 
 class SimulationCancelledError(RuntimeError):
@@ -188,6 +222,28 @@ def build_qcm_result_metadata(solution: CdaSolution) -> QcmResultMetadata:
         ) from error
 
 
+def build_experimental_quadrupole_metadata(
+    solution: CdaSolution,
+) -> ExperimentalQuadrupoleMetadata:
+    """Build mandatory provenance for the opt-in incomplete ED--EQ extension."""
+    if not solution.experimental_quadrupole_coupling_applied:
+        return ExperimentalQuadrupoleMetadata(applied=False)
+    try:
+        return ExperimentalQuadrupoleMetadata(
+            applied=True,
+            model="approximate_electric_dipole_electric_quadrupole_coupling",
+            source=EXPERIMENTAL_QUADRUPOLE_SOURCE,
+            included_terms=EXPERIMENTAL_QUADRUPOLE_INCLUDED_TERMS,
+            omitted_terms=EXPERIMENTAL_QUADRUPOLE_OMITTED_TERMS,
+            energy_conservation_note=EXPERIMENTAL_QUADRUPOLE_ENERGY_NOTE,
+            intended_use=EXPERIMENTAL_QUADRUPOLE_INTENDED_USE,
+        )
+    except ValidationError as error:
+        raise SimulationServiceError(
+            "experimental quadrupole result metadata is incomplete"
+        ) from error
+
+
 def _as_positions_m(simulation: SimulationInput) -> np.ndarray:
     positions_nm = np.asarray(
         [
@@ -245,12 +301,23 @@ def _build_simulation_result(
     c_abs_m2: np.ndarray,
     warnings: tuple[CdaWarning, ...],
     spectrum_qcm_applied: bool,
+    spectrum_experimental_quadrupole_coupling_applied: bool,
 ) -> SimulationResult:
     """同期・ストリーミング計算で共通の再現可能な結果を組み立てる。"""
     qcm_metadata = build_qcm_result_metadata(reference_solution)
     if spectrum_qcm_applied != qcm_metadata.qcm_applied:
         raise SimulationServiceError(
             "QCM application status is inconsistent between reference and spectrum"
+        )
+    experimental_quadrupole_metadata = build_experimental_quadrupole_metadata(
+        reference_solution
+    )
+    if (
+        spectrum_experimental_quadrupole_coupling_applied
+        != experimental_quadrupole_metadata.applied
+    ):
+        raise SimulationServiceError(
+            "experimental quadrupole application status is inconsistent between reference and spectrum"
         )
 
     geometric_cross_section_m2 = _geometric_cross_section_m2(diameters_m)
@@ -272,8 +339,13 @@ def _build_simulation_result(
             geometric_cross_section_m2=geometric_cross_section_m2,
         ),
         qcm_metadata=qcm_metadata,
+        experimental_quadrupole_metadata=experimental_quadrupole_metadata,
         provenance=ResultProvenance(
-            model_name=MODEL_NAME,
+            model_name=(
+                EXPERIMENTAL_QUADRUPOLE_MODEL_NAME
+                if experimental_quadrupole_metadata.applied
+                else MODEL_NAME
+            ),
             material_data_source=MATERIAL_DATA_SOURCE,
             material_data_interpolation=MATERIAL_DATA_INTERPOLATION,
             software_version=SOFTWARE_VERSION,
@@ -282,6 +354,163 @@ def _build_simulation_result(
             ResultWarning(code=warning.code, parameters=warning.parameters)
             for warning in warnings
         ],
+    )
+
+
+def _build_exact_mie_result(
+    *,
+    simulation: ExactMieSimulationInput,
+    reference_spectrum: MieSpectrum,
+    spectrum: MieSpectrum,
+) -> SimulationResult:
+    """完全Mie単一球モードの保存しない結果を組み立てる。"""
+    reference_index = 0
+    geometric_cross_section_m2 = float(
+        np.pi * (float(nanometres_to_metres(simulation.particles[0].diameter_nm)) / 2.0)
+        ** 2
+    )
+    return SimulationResult(
+        input=simulation,
+        cross_sections=CrossSectionsResult(
+            wavelength_nm=simulation.light_source.wavelength_nm,
+            c_ext_m2=float(reference_spectrum.c_ext_m2[reference_index]),
+            c_sca_m2=float(reference_spectrum.c_sca_m2[reference_index]),
+            c_abs_m2=float(reference_spectrum.c_abs_m2[reference_index]),
+            geometric_cross_section_m2=geometric_cross_section_m2,
+            q_ext=float(reference_spectrum.q_ext[reference_index]),
+            q_sca=float(reference_spectrum.q_sca[reference_index]),
+            q_abs=float(reference_spectrum.q_abs[reference_index]),
+        ),
+        spectrum=SpectrumResult(
+            wavelength_nm=[
+                float(value) for value in metres_to_nanometres(spectrum.wavelength_m)
+            ],
+            c_ext_m2=[float(value) for value in spectrum.c_ext_m2],
+            c_sca_m2=[float(value) for value in spectrum.c_sca_m2],
+            c_abs_m2=[float(value) for value in spectrum.c_abs_m2],
+            q_ext=[float(value) for value in spectrum.q_ext],
+            q_sca=[float(value) for value in spectrum.q_sca],
+            q_abs=[float(value) for value in spectrum.q_abs],
+            geometric_cross_section_m2=geometric_cross_section_m2,
+        ),
+        qcm_metadata=QcmResultMetadata(qcm_applied=False),
+        experimental_quadrupole_metadata=ExperimentalQuadrupoleMetadata(applied=False),
+        provenance=ResultProvenance(
+            model_name=EXACT_SINGLE_SPHERE_MIE_MODEL_NAME,
+            material_data_source=MATERIAL_DATA_SOURCE,
+            material_data_interpolation=MATERIAL_DATA_INTERPOLATION,
+            software_version=SOFTWARE_VERSION,
+        ),
+        warnings=[],
+    )
+
+
+def _run_exact_mie_simulation(
+    simulation: ExactMieSimulationInput,
+    *,
+    optical_constants: OpticalConstants,
+    maximum_points: int,
+    endpoint_name: str,
+) -> SimulationResult:
+    """同期エンドポイント用に単一球・全次数Mieスペクトルを計算する。"""
+    diameter_m = float(nanometres_to_metres(simulation.particles[0].diameter_nm))
+    wavelength_grid_nm = build_wavelength_grid_nm(
+        simulation.spectrum,
+        maximum_points=maximum_points,
+        endpoint_name=endpoint_name,
+    )
+    try:
+        reference_spectrum = calculate_exact_single_sphere_mie_spectrum(
+            wavelengths_m=[nanometres_to_metres(simulation.light_source.wavelength_nm)],
+            diameter_m=diameter_m,
+            medium_refractive_index=simulation.medium.refractive_index,
+            optical_constants=optical_constants,
+        )
+        spectrum = calculate_exact_single_sphere_mie_spectrum(
+            wavelengths_m=nanometres_to_metres(wavelength_grid_nm),
+            diameter_m=diameter_m,
+            medium_refractive_index=simulation.medium.refractive_index,
+            optical_constants=optical_constants,
+        )
+    except (MaterialDataError, ValueError, RuntimeError) as error:
+        raise SimulationServiceError(str(error)) from error
+    return _build_exact_mie_result(
+        simulation=simulation,
+        reference_spectrum=reference_spectrum,
+        spectrum=spectrum,
+    )
+
+
+def _run_exact_mie_simulation_with_progress(
+    simulation: ExactMieSimulationInput,
+    *,
+    optical_constants: OpticalConstants,
+    cancellation_requested: Callable[[], bool],
+    progress_callback: Callable[[int, int], None],
+) -> SimulationResult:
+    """Compute the exact single-sphere Mie spectrum point by point for SSE progress."""
+    diameter_m = float(nanometres_to_metres(simulation.particles[0].diameter_nm))
+    wavelength_grid_nm = build_wavelength_grid_nm(
+        simulation.spectrum,
+        maximum_points=MAX_STREAM_SPECTRUM_POINTS,
+        endpoint_name="streaming API",
+    )
+    wavelength_grid_m = np.asarray(nanometres_to_metres(wavelength_grid_nm))
+    total_points = len(wavelength_grid_m)
+    c_ext_m2 = np.empty(total_points, dtype=np.float64)
+    c_sca_m2 = np.empty(total_points, dtype=np.float64)
+    c_abs_m2 = np.empty(total_points, dtype=np.float64)
+    q_ext = np.empty(total_points, dtype=np.float64)
+    q_sca = np.empty(total_points, dtype=np.float64)
+    q_abs = np.empty(total_points, dtype=np.float64)
+
+    try:
+        for index, wavelength_m in enumerate(wavelength_grid_m):
+            if cancellation_requested():
+                raise SimulationCancelledError("simulation cancelled before a wavelength point")
+            point = calculate_exact_single_sphere_mie_spectrum(
+                wavelengths_m=np.asarray([wavelength_m]),
+                diameter_m=diameter_m,
+                medium_refractive_index=simulation.medium.refractive_index,
+                optical_constants=optical_constants,
+            )
+            c_ext_m2[index] = point.c_ext_m2[0]
+            c_sca_m2[index] = point.c_sca_m2[0]
+            c_abs_m2[index] = point.c_abs_m2[0]
+            q_ext[index] = point.q_ext[0]
+            q_sca[index] = point.q_sca[0]
+            q_abs[index] = point.q_abs[0]
+            if cancellation_requested():
+                raise SimulationCancelledError("simulation cancelled after a wavelength point")
+            progress_callback(index + 1, total_points)
+
+        if cancellation_requested():
+            raise SimulationCancelledError("simulation cancelled before finalisation")
+        reference_spectrum = calculate_exact_single_sphere_mie_spectrum(
+            wavelengths_m=np.asarray(
+                [nanometres_to_metres(simulation.light_source.wavelength_nm)]
+            ),
+            diameter_m=diameter_m,
+            medium_refractive_index=simulation.medium.refractive_index,
+            optical_constants=optical_constants,
+        )
+        if cancellation_requested():
+            raise SimulationCancelledError("simulation cancelled before returning a result")
+    except (MaterialDataError, ValueError, RuntimeError) as error:
+        raise SimulationServiceError(str(error)) from error
+
+    return _build_exact_mie_result(
+        simulation=simulation,
+        reference_spectrum=reference_spectrum,
+        spectrum=MieSpectrum(
+            wavelength_m=wavelength_grid_m,
+            c_ext_m2=c_ext_m2,
+            c_sca_m2=c_sca_m2,
+            c_abs_m2=c_abs_m2,
+            q_ext=q_ext,
+            q_sca=q_sca,
+            q_abs=q_abs,
+        ),
     )
 
 
@@ -302,16 +531,34 @@ def _common_cda_arguments(
         "polarization": simulation.light_source.polarization,
         "optical_constants": optical_constants,
         "qcm_parameter_table": qcm_parameter_table,
+        "apply_experimental_quadrupole_coupling": (
+            simulation.experimental_quadrupole_coupling
+        ),
     }
 
 
 def run_simulation(
-    simulation: SimulationInput,
+    simulation: SimulationRequest,
     *,
     optical_constants: OpticalConstants,
     qcm_parameter_table: GammaGParameterTable,
 ) -> SimulationResult:
     """一回の同期計算を行い、結果を永続化せずにメモリ上で返す。"""
+    if isinstance(simulation, ExactMieSimulationInput):
+        return _run_exact_mie_simulation(
+            simulation,
+            optical_constants=optical_constants,
+            maximum_points=MAX_SYNCHRONOUS_SPECTRUM_POINTS,
+            endpoint_name="synchronous API",
+        )
+    if len(simulation.particles) > MAX_SYNCHRONOUS_CDA_PARTICLES:
+        raise SimulationRequiresStreamingError(
+            "CDA calculations with more than 20 particles require the streaming API",
+            parameters={
+                "particle_count": len(simulation.particles),
+                "maximum_synchronous_particles": MAX_SYNCHRONOUS_CDA_PARTICLES,
+            },
+        )
     positions_m = _as_positions_m(simulation)
     diameters_m = _as_diameters_m(simulation)
     reference_wavelength_m = nanometres_to_metres(
@@ -357,11 +604,14 @@ def run_simulation(
         c_abs_m2=spectrum.c_abs_m2,
         warnings=spectrum.warnings,
         spectrum_qcm_applied=spectrum.qcm_applied,
+        spectrum_experimental_quadrupole_coupling_applied=(
+            spectrum.experimental_quadrupole_coupling_applied
+        ),
     )
 
 
 def run_simulation_with_progress(
-    simulation: SimulationInput,
+    simulation: SimulationRequest,
     *,
     optical_constants: OpticalConstants,
     qcm_parameter_table: GammaGParameterTable,
@@ -373,6 +623,13 @@ def run_simulation_with_progress(
     この関数は部分スペクトルを返さない。呼出し側は ``progress_callback`` へ点数だけを
     送り、取消時には局所配列を破棄して ``SimulationCancelledError`` を受け取る。
     """
+    if isinstance(simulation, ExactMieSimulationInput):
+        return _run_exact_mie_simulation_with_progress(
+            simulation,
+            optical_constants=optical_constants,
+            cancellation_requested=cancellation_requested,
+            progress_callback=progress_callback,
+        )
     positions_m = _as_positions_m(simulation)
     diameters_m = _as_diameters_m(simulation)
     wavelength_grid_nm = build_wavelength_grid_nm(
@@ -434,4 +691,7 @@ def run_simulation_with_progress(
         c_abs_m2=c_abs_m2,
         warnings=warnings or (),
         spectrum_qcm_applied=bool(qcm_applied),
+        spectrum_experimental_quadrupole_coupling_applied=(
+            simulation.experimental_quadrupole_coupling
+        ),
     )

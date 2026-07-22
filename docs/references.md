@@ -87,3 +87,14 @@
      ethanolの `n=1.361` をWeb UIの初期プリセットに置く。
    - 注意：本MVPはこれらを波長全域で一定とする均一・非吸収性媒質近似であり、
      分散・温度・組成依存を表現しない。
+
+9. 実験的な電気双極子–電気四極子結合
+   - Evlyukhin, A. B.; Reinhardt, C.; Zywietz, U.; Chichkov, B. N.
+     Collective resonances in metal nanoparticle arrays with dipole-quadrupole
+     interactions. Physical Review B 85, 245411 (2012).
+     DOI: 10.1103/PhysRevB.85.245411
+   - 用途：電気双極子・電気四極子の定義、`a_1` と `a_2` からの分極率規約
+     （Eq. 16）、双極子–四極子Green項（Eq. 7）、およびExtinction/Scatteringの
+     多重極式（Eqs. 23–28）の出典。本リポジトリの実験的機能は、同論文の
+     四極子–四極子項と磁気多重極項を意図的に省略するため、完全な同論文モデルを
+     実装したものではない。

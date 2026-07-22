@@ -31,6 +31,41 @@ def _simulation_payload() -> dict[str, Any]:
     }
 
 
+def _large_classical_payload() -> dict[str, Any]:
+    payload = _simulation_payload()
+    payload["particles"] = [
+        {
+            "diameter_nm": 20.0,
+            "x_nm": float(index * 26.0),
+            "y_nm": 0.0,
+            "z_nm": 0.0,
+        }
+        for index in range(50)
+    ]
+    payload["spectrum"] = {
+        "start_wavelength_nm": 600.0,
+        "end_wavelength_nm": 600.0,
+        "step_nm": 10.0,
+    }
+    return payload
+
+
+def test_ui_entry_point_and_mutable_ui_assets_disable_http_caching() -> None:
+    """ローカルUIは、更新後に古いJavaScript/CSSを混在させない。"""
+    index_status, _, index_headers = asyncio.run(_request("GET", "/"))
+    script_status, _, script_headers = asyncio.run(_request("GET", "/static/js/app.js"))
+    stylesheet_status, _, stylesheet_headers = asyncio.run(
+        _request("GET", "/static/css/app.css")
+    )
+
+    assert index_status == 200
+    assert script_status == 200
+    assert stylesheet_status == 200
+    assert (b"cache-control", b"no-store") in index_headers
+    assert (b"cache-control", b"no-store") in script_headers
+    assert (b"cache-control", b"no-store") in stylesheet_headers
+
+
 async def _request(
     method: str,
     path: str,
@@ -112,3 +147,24 @@ def test_sse_emits_point_progress_and_only_returns_spectrum_on_completion() -> N
     assert progress_events[-1]["fraction"] == 1.0
     assert all("result" not in event for event in progress_events)
     assert complete_events[0]["result"]["spectrum"]["wavelength_nm"] == [580.0, 600.0, 620.0]
+
+
+def test_sse_completes_a_fifty_particle_classical_cda_calculation() -> None:
+    """21〜50粒子は同期APIではなくSSE経路でのみ完了させる。"""
+    start_status, start_body, _ = asyncio.run(
+        _request("POST", "/simulate/jobs", payload=_large_classical_payload())
+    )
+    assert start_status == 202
+    job_id = json.loads(start_body.decode("utf-8"))["job_id"]
+
+    stream_status, stream_body, _ = asyncio.run(
+        _request("GET", f"/simulate/stream/{job_id}")
+    )
+
+    assert stream_status == 200
+    events = _parse_sse(stream_body)
+    complete_events = [data for name, data in events if name == "complete"]
+    assert len(complete_events) == 1
+    result = complete_events[0]["result"]
+    assert result["qcm_metadata"]["qcm_applied"] is False
+    assert result["spectrum"]["wavelength_nm"] == [600.0]

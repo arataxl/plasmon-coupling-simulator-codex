@@ -66,3 +66,35 @@ def test_simulation_schema_rejects_non_au_material() -> None:
             medium=_medium(),
             light_source=_light_source(),
         )
+
+
+def test_more_than_twenty_particles_require_every_gap_to_exceed_five_nanometres() -> None:
+    particles = [
+        ParticleInput(diameter_nm=20.0, x_nm=float(index * 25), y_nm=0.0, z_nm=0.0)
+        for index in range(21)
+    ]
+
+    with pytest.raises(ValidationError, match="every surface gap to exceed 5 nm"):
+        SimulationInput(
+            particles=particles,
+            medium=_medium(),
+            light_source=_light_source(),
+        )
+
+
+def test_more_than_twenty_particles_allow_classical_gaps_above_five_nanometres() -> None:
+    simulation = SimulationInput(
+        particles=[
+            ParticleInput(
+                diameter_nm=20.0,
+                x_nm=float(index * 25.1),
+                y_nm=0.0,
+                z_nm=0.0,
+            )
+            for index in range(50)
+        ],
+        medium=_medium(),
+        light_source=_light_source(),
+    )
+
+    assert len(simulation.particles) == 50

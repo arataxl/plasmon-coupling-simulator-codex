@@ -30,6 +30,7 @@ from numpy.typing import ArrayLike, NDArray
 
 RealMatrix = NDArray[np.float64]
 ComplexMatrix = NDArray[np.complex128]
+ComplexRankThree = NDArray[np.complex128]
 
 
 def _validate_wave_number(wave_number_m_inv: float) -> float:
@@ -77,6 +78,123 @@ def retarded_dyadic_green_tensor(
     if not np.all(np.isfinite(tensor)):
         raise FloatingPointError("retarded Green tensor is non-finite")
     return np.asarray(tensor, dtype=np.complex128)
+
+
+def retarded_electric_quadrupole_green_tensor(
+    *,
+    relative_position_m: ArrayLike,
+    wave_number_m_inv: float,
+) -> ComplexMatrix:
+    """Return the electric-quadrupole-to-electric-field Green tensor.
+
+    ``relative_position_m`` is the target-minus-source centre vector
+    ``R = r_target - r_source`` in metres.  The returned tensor has units
+    ``m^-2`` and maps the source quadrupole contraction ``Q @ Rhat`` to its
+    field contribution through
+
+    ``E_Q = k_m^2 G_Q(R) (Q @ Rhat) / (epsilon_0 epsilon_m)``.
+
+    The expression is Eq. (7) of Evlyukhin et al., *Physical Review B* 85,
+    245411 (2012), DOI: 10.1103/PhysRevB.85.245411.  It shares the
+    ``exp(-i omega t)`` convention and the host-medium wavenumber ``k_m`` of
+    :func:`retarded_dyadic_green_tensor`.
+    """
+    wave_number_m_inv = _validate_wave_number(wave_number_m_inv)
+    relative_position = _as_relative_position(relative_position_m)
+    distance_m = float(np.linalg.norm(relative_position))
+    if distance_m == 0.0:
+        raise ValueError("retarded quadrupole Green tensor is singular at zero separation")
+
+    unit_vector = relative_position / distance_m
+    unit_dyadic = np.outer(unit_vector, unit_vector)
+    kr = wave_number_m_inv * distance_m
+    inverse_kr = 1.0 / kr
+    isotropic_coefficient = (
+        -1.0
+        - 3j * inverse_kr
+        + 6.0 * inverse_kr**2
+        + 6j * inverse_kr**3
+    )
+    longitudinal_coefficient = (
+        1.0
+        + 6j * inverse_kr
+        - 15.0 * inverse_kr**2
+        - 15j * inverse_kr**3
+    )
+    tensor = (
+        1j
+        * wave_number_m_inv
+        * np.exp(1j * kr)
+        / (24.0 * math.pi * distance_m)
+        * (isotropic_coefficient * np.eye(3) + longitudinal_coefficient * unit_dyadic)
+    )
+    if not np.all(np.isfinite(tensor)):
+        raise FloatingPointError("retarded quadrupole Green tensor is non-finite")
+    return np.asarray(tensor, dtype=np.complex128)
+
+
+def gradient_of_retarded_dyadic_green_tensor(
+    *,
+    relative_position_m: ArrayLike,
+    wave_number_m_inv: float,
+) -> ComplexRankThree:
+    """Return ``dG[a, b, c] = partial_a G[b, c]`` in the target coordinates.
+
+    ``relative_position_m`` is ``r_target - r_source`` in metres, and the
+    returned tensor has units ``m^-2``.  This is the analytic spatial
+    derivative of Eq. (6) of Evlyukhin et al., *Physical Review B* 85,
+    245411 (2012), DOI: 10.1103/PhysRevB.85.245411; it is used in their
+    Eq. (2) for the electric-dipole-to-electric-quadrupole interaction.  No
+    finite-difference step is introduced.
+    """
+    wave_number_m_inv = _validate_wave_number(wave_number_m_inv)
+    relative_position = _as_relative_position(relative_position_m)
+    distance_m = float(np.linalg.norm(relative_position))
+    if distance_m == 0.0:
+        raise ValueError("retarded Green-tensor gradient is singular at zero separation")
+
+    unit_vector = relative_position / distance_m
+    kr = wave_number_m_inv * distance_m
+    inverse_kr = 1.0 / kr
+    transverse_coefficient = 1.0 + 1j * inverse_kr - inverse_kr**2
+    longitudinal_coefficient = -1.0 - 3j * inverse_kr + 3.0 * inverse_kr**2
+    radial_prefactor = np.exp(1j * kr) / (4.0 * math.pi * distance_m)
+    radial_prefactor_derivative = radial_prefactor * (
+        1j * wave_number_m_inv - 1.0 / distance_m
+    )
+    transverse_derivative = wave_number_m_inv * (
+        -1j * inverse_kr**2 + 2.0 * inverse_kr**3
+    )
+    longitudinal_derivative = wave_number_m_inv * (
+        3j * inverse_kr**2 - 6.0 * inverse_kr**3
+    )
+    isotropic_radial_derivative = (
+        radial_prefactor_derivative * transverse_coefficient
+        + radial_prefactor * transverse_derivative
+    )
+    longitudinal_radial_derivative = (
+        radial_prefactor_derivative * longitudinal_coefficient
+        + radial_prefactor * longitudinal_derivative
+    )
+    identity = np.eye(3)
+    gradient = np.empty((3, 3, 3), dtype=np.complex128)
+    for coordinate_index in range(3):
+        radial_direction = unit_vector[coordinate_index]
+        unit_dyadic_derivative = (
+            np.outer(identity[coordinate_index], unit_vector)
+            + np.outer(unit_vector, identity[coordinate_index])
+            - 2.0 * radial_direction * np.outer(unit_vector, unit_vector)
+        ) / distance_m
+        gradient[coordinate_index] = (
+            isotropic_radial_derivative * radial_direction * identity
+            + longitudinal_radial_derivative
+            * radial_direction
+            * np.outer(unit_vector, unit_vector)
+            + radial_prefactor * longitudinal_coefficient * unit_dyadic_derivative
+        )
+    if not np.all(np.isfinite(gradient)):
+        raise FloatingPointError("retarded Green-tensor gradient is non-finite")
+    return gradient
 
 
 def imaginary_part_of_green_tensor(

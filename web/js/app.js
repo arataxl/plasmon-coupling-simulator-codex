@@ -65,7 +65,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         },
         onComplete(result) {
           progressBar.value = progressBar.max;
-          window.PlasmonResults.renderResult(result);
+          window.PlasmonResults.completeResult(result);
           setProgress("progress.complete");
           setRunning(false);
         },

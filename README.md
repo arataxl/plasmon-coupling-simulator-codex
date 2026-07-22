@@ -8,10 +8,11 @@ It is a condition-exploration tool, not a quantitative reproducer of experiments
 
 ## What the MVP provides
 
-- Au nanospheres only: 1–20 particles, each with an independently editable diameter and 3D centre coordinate.
+- Au nanospheres: 1–20 particles in the standard CDA/QCM workflow, with independently editable diameters and 3D centre coordinates. The `experimental/post-submission` branch also permits 21–50 particles for classical CDA only, when every surface gap exceeds 5 nm; QCM and the 1–5 nm CDA warning range remain limited to 20 particles.
 - Complete single-sphere Mie calculations as a reference, and FCDA-based multi-particle CDA with a retarded dyadic Green tensor.
 - Extinction (`C_ext`), scattering (`C_sca`), absorption (`C_abs`), and their efficiencies (`Q_ext`, `Q_sca`, `Q_abs`) as spectra.
 - A static local web UI with English as the initial language and a Japanese toggle, a 3D geometry preview, dimer/equilateral-trimer/random-cluster presets, SSE progress updates, and cooperative cancellation.
+- Browser-local history for the latest 30 completed calculations, with deletion, selected-spectrum comparison, and individual or bulk CSV download. It is never sent to or stored by the server.
 - Browser-side CSV/JSON downloads that include calculation conditions and do not save results on the server. Exported JSON can be validated and used for the same calculation again.
 
 The detailed MVP boundary and acceptance criteria are in [docs/SPEC.md](docs/SPEC.md).
@@ -31,6 +32,10 @@ All core calculations use SI units. The UI, API, and CSV/JSON boundaries convert
 The QCM distance-dependent `gamma_g` values are a versioned, manually digitized reference table for the Au jellium blue solid curve in Esteban et al. (2012), Fig. 2d. Interpolation is shape-preserving PCHIP in `log(gamma_g)`. The table is provisional, has an estimated 5–10% reading uncertainty, and is not extrapolated. Above its 5.439 Å upper separation, QCM-selected pairs use the classical limit and the result reports that status explicitly. The MVP's four-layer QCM construction is a volume-equivalent auxiliary bridge-dipole reduction, not a reproduction of the paper's BEM/FEM model.
 
 The near-infrared response can be underestimated because CDA omits higher-order multipole coupling. BEM, DDA, or FDTD can therefore yield different results.
+
+The `experimental/post-submission` branch additionally exposes an off-by-default **Experimental: approximate quadrupole coupling** toggle. It derives an electric quadrupole from single-sphere Mie `a2` and adds only approximate electric dipole--quadrupole terms. It omits quadrupole--quadrupole and magnetic multipoles, so it is explicitly labelled for qualitative near-infrared trend exploration only; it does not guarantee quantitative accuracy or exact energy conservation for multi-particle results. JSON/CSV provenance records whether it was used.
+
+That branch also contains a distinct **Single particle: exact Mie theory** mode for one homogeneous Au sphere with a diameter from 2 to 500 nm. It evaluates the converged all-order electric and magnetic Mie series and does not use CDA, QCM, or the experimental quadrupole approximation. From 2 to 100 nm, it intentionally overlaps with the single-particle FCDA path for comparison and validation. It does not expand the 2-100 nm multi-particle CDA scope. The local homogeneous-sphere and bulk-optical-constant assumptions still apply.
 
 Kreibig size correction remains an internal physics-core hook and is off by default. It is not exposed through the MVP UI or API because compatible primary-source parameters for the Johnson and Christy bulk `n + ik` model have not been established. The Au jellium Drude values used in the QCM context are not reused for that correction.
 

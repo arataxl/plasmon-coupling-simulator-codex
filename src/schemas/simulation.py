@@ -10,6 +10,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 MIN_DIAMETER_NM = 2.0
 MAX_DIAMETER_NM = 100.0
+MAX_CLASSICAL_CDA_PARTICLES = 50
+MAX_QCM_CDA_PARTICLES = 20
+EXPANDED_CLASSICAL_CDA_MIN_GAP_NM = 5.0
+EXACT_MIE_MIN_DIAMETER_NM = 2.0
+EXACT_MIE_MAX_DIAMETER_NM = 500.0
 MIN_SURFACE_GAP_NM = 0.5
 MIN_WAVELENGTH_NM = 200.0
 MAX_WAVELENGTH_NM = 1500.0
@@ -33,6 +38,26 @@ class ParticleInput(BaseModel):
     x_nm: float
     y_nm: float
     z_nm: float
+
+    @field_validator("diameter_nm", "x_nm", "y_nm", "z_nm")
+    @classmethod
+    def validate_finite_values(cls, value: float, info: object) -> float:
+        field_name = getattr(info, "field_name", "value")
+        return _require_finite(value, field_name=field_name)
+
+
+class ExactMieParticleInput(BaseModel):
+    """単一球・完全Mie理論モード専用のAu球入力（nm）。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    diameter_nm: float = Field(
+        ge=EXACT_MIE_MIN_DIAMETER_NM,
+        le=EXACT_MIE_MAX_DIAMETER_NM,
+    )
+    x_nm: float = 0.0
+    y_nm: float = 0.0
+    z_nm: float = 0.0
 
     @field_validator("diameter_nm", "x_nm", "y_nm", "z_nm")
     @classmethod
@@ -117,7 +142,7 @@ class RandomClusterLayoutInput(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    particle_count: int = Field(ge=1, le=20)
+    particle_count: int = Field(ge=1, le=MAX_CLASSICAL_CDA_PARTICLES)
     mean_diameter_nm: float = Field(ge=MIN_DIAMETER_NM, le=MAX_DIAMETER_NM)
     minimum_surface_gap_nm: float = Field(ge=MIN_SURFACE_GAP_NM)
     maximum_surface_gap_nm: float = Field(ge=MIN_SURFACE_GAP_NM)
@@ -137,6 +162,13 @@ class RandomClusterLayoutInput(BaseModel):
             raise ValueError(
                 "maximum_surface_gap_nm must be at least minimum_surface_gap_nm"
             )
+        if (
+            self.particle_count > MAX_QCM_CDA_PARTICLES
+            and self.minimum_surface_gap_nm < EXPANDED_CLASSICAL_CDA_MIN_GAP_NM
+        ):
+            raise ValueError(
+                "more than 20 particles require a minimum surface gap of at least 5 nm"
+            )
         return self
 
 
@@ -145,7 +177,9 @@ class DisplayLayoutInput(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    particles: list[ParticleInput] = Field(min_length=1, max_length=20)
+    particles: list[ParticleInput] = Field(
+        min_length=1, max_length=MAX_CLASSICAL_CDA_PARTICLES
+    )
 
     @model_validator(mode="after")
     def validate_source_surface_gaps(self) -> Self:
@@ -179,14 +213,19 @@ class SimulationInput(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    simulation_mode: Literal["cda"] = "cda"
     material: Literal["Au"] = "Au"
-    particles: list[ParticleInput] = Field(min_length=1, max_length=20)
+    particles: list[ParticleInput] = Field(
+        min_length=1, max_length=MAX_CLASSICAL_CDA_PARTICLES
+    )
     medium: MediumInput
     light_source: LightSourceInput
     spectrum: SpectrumRangeInput = Field(default_factory=SpectrumRangeInput)
+    experimental_quadrupole_coupling: bool = False
 
     @model_validator(mode="after")
     def validate_surface_gaps(self) -> Self:
+        requires_classical_expanded_limit = len(self.particles) > MAX_QCM_CDA_PARTICLES
         for left_index, left_particle in enumerate(self.particles):
             for right_index in range(left_index + 1, len(self.particles)):
                 right_particle = self.particles[right_index]
@@ -213,4 +252,32 @@ class SimulationInput(BaseModel):
                         "quantum tunnelling makes the classical local-response "
                         "model unavailable"
                     )
+                if (
+                    requires_classical_expanded_limit
+                    and surface_gap_nm <= EXPANDED_CLASSICAL_CDA_MIN_GAP_NM
+                ):
+                    raise ValueError(
+                        "more than 20 particles require every surface gap to exceed 5 nm; "
+                        "use 20 or fewer particles for QCM and the 1-5 nm CDA warning range"
+                    )
         return self
+
+
+class ExactMieSimulationInput(BaseModel):
+    """単一Au球の全次数Mieスペクトル専用入力。
+
+    この型はCDA/QCMおよび実験的な双極子--四極子近似と交差させない。位置は
+    UIの共通3Dプレビューとの互換性のために受け取るが、単一球Mie解には用いない。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    simulation_mode: Literal["exact_mie"]
+    material: Literal["Au"] = "Au"
+    particles: list[ExactMieParticleInput] = Field(min_length=1, max_length=1)
+    medium: MediumInput
+    light_source: LightSourceInput
+    spectrum: SpectrumRangeInput = Field(default_factory=SpectrumRangeInput)
+
+
+SimulationRequest = SimulationInput | ExactMieSimulationInput

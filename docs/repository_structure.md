@@ -139,7 +139,7 @@ QCM表の抽出手順、校正点、読取誤差の定義は
 | Web/API | FastAPI + uvicorn | SPECと既存Antigravity方針に合致する。`127.0.0.1`限定の静的配信、Pydanticスキーマ、SSEを一つのPythonプロセスで扱える。 |
 | ジョブ進捗 | FastAPIのSSE + 協調的ワーカースレッド | Windowsで追加依存やプロセス間の材料表シリアライズを増やさず、D-1に従いSSEを進捗・取消通知に限定する。取消はSciPyの一波長線形ソルバーを強制停止せず、波長点境界で反映する。 |
 | Mie参照解 | `miepython` | 既存READMEに採用予定として記載があるため継続候補とする。完全Mie解を自作せず利用し、ライブラリ版・Auデータ・波長格子を固定してTest 1の基準配列を版管理する。アプリ本体と同一ライブラリのその場計算だけを比較基準にはしない。 |
-| CDA / Green tensor | NumPy + SciPy | 複素配列、3N次元の線形方程式、数値状態の監視を明確に実装できる。MVPは最大20粒子（最大60自由度）であり、GPU・分散計算は不要である。 |
+| CDA / Green tensor | NumPy + SciPy | 複素配列、3N次元の線形方程式、数値状態の監視を明確に実装できる。標準MVPは最大20粒子（最大60自由度）であり、`experimental/post-submission` の古典CDA限定拡張では最大50粒子（最大150自由度）をSSE経路で扱う。GPU・分散計算は不要である。 |
 | 入出力・単位変換 | Python標準の `json` / `csv` + Pydantic | 仕様で必要なCSV/JSONとスキーマ検証に十分であり、pandasはMVPの必須依存にしない。既存READMEのpandas記載は、実際の依存定義がないため削除する。 |
 | グラフ/UI | 同梱Plotly.js + HTML / CSS / Vanilla JavaScript | 既存の静的Web UI・オフライン方針を維持する。既存READMEのPlotly.js 2.24.1とSHA-256は、セットアップ実装時に同一値を検証する。 |
 | テスト | pytest | `docs/validation_plan.md` のTest 1〜6をモジュール単位で対応付けられる。物理コアをAPI/UIより先に検証する。 |

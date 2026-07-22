@@ -22,6 +22,7 @@ from __future__ import annotations
 import math
 import warnings
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -30,13 +31,17 @@ from scipy.constants import c as SPEED_OF_LIGHT_M_PER_S
 from scipy.constants import epsilon_0 as VACUUM_PERMITTIVITY_F_PER_M
 
 from src.physics.green_tensor import (
+    gradient_of_retarded_dyadic_green_tensor,
     imaginary_part_of_green_tensor,
+    retarded_electric_quadrupole_green_tensor,
     retarded_dyadic_green_tensor,
 )
 from src.physics.material_data import OpticalConstants
 from src.physics.polarizability import (
+    ElectricQuadrupolePolarizability,
     FcdaPolarizability,
     KreibigParameters,
+    calculate_electric_quadrupole_polarizability,
     calculate_fcda_polarizability,
 )
 from src.physics.qcm import (
@@ -50,7 +55,8 @@ from src.physics.qcm import (
 )
 
 
-MAX_PARTICLES = 20
+MAX_PARTICLES = 50
+MAX_QCM_PARTICLES = 20
 MIN_SURFACE_GAP_M = 0.5e-9
 QCM_REQUIRED_BELOW_GAP_M = 1.0e-9
 CDA_WARNING_UP_TO_GAP_M = 5.0e-9
@@ -60,6 +66,11 @@ WARNING_CDA_GAP_LIMITATION = "cda_gap_limitation"
 WARNING_QCM_APPLIED = "qcm_applied"
 WARNING_QCM_CLASSICAL_LIMIT = "qcm_classical_limit"
 WARNING_QCM_VALIDATION_OVERRIDE = "qcm_validation_override"
+WARNING_EXPERIMENTAL_QUADRUPOLE_COUPLING = "experimental_quadrupole_coupling"
+
+_ELECTRIC_QUADRUPOLE_COMPONENT_COUNT = 5
+_EXPERIMENTAL_QUADRUPOLE_SCATTERING_POLAR_ORDER = 24
+_EXPERIMENTAL_QUADRUPOLE_SCATTERING_AZIMUTHAL_ORDER = 48
 
 FloatArray = NDArray[np.float64]
 ComplexArray = NDArray[np.complex128]
@@ -140,6 +151,9 @@ class CdaSolution:
     qcm_bridge_count: int
     qcm_classical_limit_pair_count: int
     qcm_max_relative_permittivity_contrast: float | None
+    experimental_quadrupole_coupling_applied: bool
+    electric_quadrupole_polarizabilities_si: ComplexArray
+    induced_electric_quadrupoles_c_m2: ComplexArray
 
 
 @dataclass(frozen=True)
@@ -166,6 +180,7 @@ class CdaSpectrum:
     qcm_bulk_damping_energy_ev: float | None
     qcm_bridge_count: int
     qcm_classical_limit_pair_count: int
+    experimental_quadrupole_coupling_applied: bool
 
 
 def _require_finite_positive(value: float, *, name: str) -> float:
@@ -446,6 +461,237 @@ def _build_interaction_matrix(
     return matrix
 
 
+def _quadrupole_vector_to_tensor(values: ArrayLike) -> ComplexArray:
+    """Map ``(Qxx, Qyy, Qxy, Qxz, Qyz)`` to a symmetric traceless tensor.
+
+    The five-component representation is the one used by Evlyukhin et al.,
+    *Physical Review B* 85, 245411 (2012), after their Eqs. (1)--(2):
+    ``Qzz = -Qxx - Qyy``.  All components are in ``C m^2``.
+    """
+    vector = np.asarray(values, dtype=np.complex128)
+    if vector.shape != (_ELECTRIC_QUADRUPOLE_COMPONENT_COUNT,):
+        raise ValueError("electric quadrupole vector must have shape (5,)")
+    q_xx, q_yy, q_xy, q_xz, q_yz = vector
+    return np.asarray(
+        (
+            (q_xx, q_xy, q_xz),
+            (q_xy, q_yy, q_yz),
+            (q_xz, q_yz, -q_xx - q_yy),
+        ),
+        dtype=np.complex128,
+    )
+
+
+def _quadrupole_tensor_to_vector(tensor: ArrayLike) -> ComplexArray:
+    """Return the five independent components of a symmetric traceless tensor."""
+    array = np.asarray(tensor, dtype=np.complex128)
+    if array.shape != (3, 3):
+        raise ValueError("electric quadrupole tensor must have shape (3, 3)")
+    return np.asarray(
+        (
+            array[0, 0],
+            array[1, 1],
+            (array[0, 1] + array[1, 0]) / 2.0,
+            (array[0, 2] + array[2, 0]) / 2.0,
+            (array[1, 2] + array[2, 1]) / 2.0,
+        ),
+        dtype=np.complex128,
+    )
+
+
+def _symmetric_traceless_part(tensor: ArrayLike) -> ComplexArray:
+    """Return ``(T + T.T)/2 - trace(T) I / 3`` for a 3 by 3 tensor."""
+    array = np.asarray(tensor, dtype=np.complex128)
+    if array.shape != (3, 3):
+        raise ValueError("tensor must have shape (3, 3)")
+    symmetric = (array + array.T) / 2.0
+    return np.asarray(
+        symmetric - np.trace(symmetric) * np.eye(3, dtype=np.complex128) / 3.0,
+        dtype=np.complex128,
+    )
+
+
+def _quadrupole_to_field_block(
+    *,
+    green_tensor: ComplexArray,
+    source_direction: FloatArray,
+) -> ComplexArray:
+    """Build the 3 by 5 block mapping independent ``Q`` values to ``E``."""
+    basis_vectors = np.eye(_ELECTRIC_QUADRUPOLE_COMPONENT_COUNT, dtype=np.complex128)
+    return np.column_stack(
+        [
+            green_tensor
+            @ (_quadrupole_vector_to_tensor(basis) @ source_direction)
+            for basis in basis_vectors
+        ]
+    )
+
+
+def _dipole_to_quadrupole_block(
+    *,
+    green_tensor_gradient: NDArray[np.complex128],
+) -> ComplexArray:
+    """Build the 5 by 3 block mapping a source dipole to ``sym(grad(E))``."""
+    basis_vectors = np.eye(3, dtype=np.complex128)
+    return np.column_stack(
+        [
+            _quadrupole_tensor_to_vector(
+                _symmetric_traceless_part(
+                    np.einsum("abc,c->ab", green_tensor_gradient, basis)
+                )
+            )
+            for basis in basis_vectors
+        ]
+    )
+
+
+def _build_experimental_dipole_quadrupole_interaction_matrix(
+    *,
+    interaction_positions_m: FloatArray,
+    interaction_polarizabilities_si: ComplexArray,
+    physical_particle_count: int,
+    electric_quadrupole_polarizabilities_si: ComplexArray,
+    wave_number_m_inv: float,
+    medium_relative_permittivity: float,
+) -> ComplexArray:
+    """Build the experimental ED--EQ system with no quadrupole--quadrupole block.
+
+    This implements the ED--EQ terms of Eqs. (1)--(2) in Evlyukhin et al.,
+    *Physical Review B* 85, 245411 (2012), DOI: 10.1103/PhysRevB.85.245411.
+    It intentionally excludes their quadrupole--quadrupole terms and all
+    magnetic multipoles.  It is therefore not an energy-conserving complete
+    multipole model and must only be reached through the explicit experimental
+    flag.  The solved quadrupole unknown is ``k_m Q`` rather than ``Q`` so
+    that it has the same SI units as a dipole moment.  This is a numerical
+    row/column scaling only; the returned solution is converted back to
+    ``Q`` in ``C m^2`` after the solve.
+    """
+    interaction_particle_count = len(interaction_positions_m)
+    expected_quadrupole_shape = (physical_particle_count,)
+    if electric_quadrupole_polarizabilities_si.shape != expected_quadrupole_shape:
+        raise ValueError("electric quadrupole polarizabilities do not match particles")
+
+    dipole_dimension = 3 * interaction_particle_count
+    total_dimension = dipole_dimension + (
+        _ELECTRIC_QUADRUPOLE_COMPONENT_COUNT * physical_particle_count
+    )
+    matrix = np.eye(total_dimension, dtype=np.complex128)
+    interaction_scale = wave_number_m_inv**2 / (
+        VACUUM_PERMITTIVITY_F_PER_M * medium_relative_permittivity
+    )
+
+    def dipole_slice(index: int) -> slice:
+        return slice(3 * index, 3 * index + 3)
+
+    def quadrupole_slice(index: int) -> slice:
+        start = dipole_dimension + _ELECTRIC_QUADRUPOLE_COMPONENT_COUNT * index
+        return slice(start, start + _ELECTRIC_QUADRUPOLE_COMPONENT_COUNT)
+
+    for target_index in range(interaction_particle_count):
+        target_dipole_slice = dipole_slice(target_index)
+        for source_index in range(interaction_particle_count):
+            if target_index == source_index:
+                continue
+            source_dipole_slice = dipole_slice(source_index)
+            relative_position = (
+                interaction_positions_m[target_index]
+                - interaction_positions_m[source_index]
+            )
+            green_tensor = retarded_dyadic_green_tensor(
+                relative_position_m=relative_position,
+                wave_number_m_inv=wave_number_m_inv,
+            )
+            matrix[target_dipole_slice, source_dipole_slice] = (
+                -interaction_polarizabilities_si[target_index]
+                * interaction_scale
+                * green_tensor
+            )
+
+        for source_index in range(physical_particle_count):
+            if target_index == source_index:
+                continue
+            relative_position = (
+                interaction_positions_m[target_index]
+                - interaction_positions_m[source_index]
+            )
+            source_direction = relative_position / np.linalg.norm(relative_position)
+            quadrupole_green_tensor = retarded_electric_quadrupole_green_tensor(
+                relative_position_m=relative_position,
+                wave_number_m_inv=wave_number_m_inv,
+            )
+            matrix[target_dipole_slice, quadrupole_slice(source_index)] = (
+                -interaction_polarizabilities_si[target_index]
+                * interaction_scale
+                * _quadrupole_to_field_block(
+                    green_tensor=quadrupole_green_tensor,
+                    source_direction=source_direction,
+                )
+                / wave_number_m_inv
+            )
+
+    for target_index in range(physical_particle_count):
+        target_quadrupole_slice = quadrupole_slice(target_index)
+        for source_index in range(interaction_particle_count):
+            if target_index == source_index:
+                continue
+            relative_position = (
+                interaction_positions_m[target_index]
+                - interaction_positions_m[source_index]
+            )
+            green_tensor_gradient = gradient_of_retarded_dyadic_green_tensor(
+                relative_position_m=relative_position,
+                wave_number_m_inv=wave_number_m_inv,
+            )
+            matrix[target_quadrupole_slice, dipole_slice(source_index)] = (
+                -electric_quadrupole_polarizabilities_si[target_index]
+                * wave_number_m_inv
+                * interaction_scale
+                * _dipole_to_quadrupole_block(
+                    green_tensor_gradient=green_tensor_gradient
+                )
+            )
+    return matrix
+
+
+def _experimental_quadrupole_right_hand_side(
+    *,
+    interaction_polarizabilities_si: ComplexArray,
+    interaction_incident_electric_fields_v_m: ComplexArray,
+    physical_particle_count: int,
+    electric_quadrupole_polarizabilities_si: ComplexArray,
+    wave_number_m_inv: float,
+    propagation_direction: FloatArray,
+) -> ComplexArray:
+    """Build the ED--EQ incident vector from Eqs. (1)--(2) of Evlyukhin et al.
+
+    The source is Evlyukhin et al., *Physical Review B* 85, 245411 (2012),
+    DOI: 10.1103/PhysRevB.85.245411.
+    """
+    dipole_right_hand_side = (
+        interaction_polarizabilities_si[:, np.newaxis]
+        * interaction_incident_electric_fields_v_m
+    ).reshape(-1)
+    quadrupole_right_hand_side = np.empty(
+        _ELECTRIC_QUADRUPOLE_COMPONENT_COUNT * physical_particle_count,
+        dtype=np.complex128,
+    )
+    for particle_index in range(physical_particle_count):
+        incident_gradient = 1j * wave_number_m_inv * np.outer(
+            propagation_direction,
+            interaction_incident_electric_fields_v_m[particle_index],
+        )
+        quadrupole_tensor = (
+            electric_quadrupole_polarizabilities_si[particle_index]
+            * wave_number_m_inv
+            * _symmetric_traceless_part(incident_gradient)
+        )
+        start = _ELECTRIC_QUADRUPOLE_COMPONENT_COUNT * particle_index
+        quadrupole_right_hand_side[
+            start : start + _ELECTRIC_QUADRUPOLE_COMPONENT_COUNT
+        ] = _quadrupole_tensor_to_vector(quadrupole_tensor)
+    return np.concatenate((dipole_right_hand_side, quadrupole_right_hand_side))
+
+
 def solve_cda(
     *,
     positions_m: ArrayLike,
@@ -462,10 +708,11 @@ def solve_cda(
     qcm_parameter_table: GammaGParameterTable | None = None,
     apply_qcm: bool | None = None,
     qcm_layer_count: int = DEFAULT_QCM_LAYER_COUNT,
+    apply_experimental_quadrupole_coupling: bool = False,
 ) -> CdaSolution:
     """一波長の FCDA-CDA 連立方程式を解く。
 
-    最大20物理粒子、すなわち最大60複素自由度を対象に ``scipy.linalg.solve`` を
+    最大50物理粒子、すなわち最大150複素自由度を対象に ``scipy.linalg.solve`` を
     用いる。QCMでは近接粒子対ごとに補助双極子の3自由度が加わる。行列の2ノルム
     条件数が ``max_condition_number`` を超える、特異、または残差が丸め誤差の見積りを
     超える場合は、非物理的な結果を返さず例外にする。
@@ -491,10 +738,19 @@ def solve_cda(
     diameters = _as_diameters(diameters_m, particle_count=len(positions))
     if apply_qcm is not None and not isinstance(apply_qcm, bool):
         raise CdaConfigurationError("apply_qcm must be None or bool")
+    if not isinstance(apply_experimental_quadrupole_coupling, bool):
+        raise CdaConfigurationError(
+            "apply_experimental_quadrupole_coupling must be bool"
+        )
     geometry_warnings, qcm_pairs = _validate_surface_gaps(
         positions_m=positions,
         diameters_m=diameters,
     )
+    if len(positions) > MAX_QCM_PARTICLES and (qcm_pairs or geometry_warnings):
+        raise CdaConfigurationError(
+            "more than 20 particles require every surface gap to exceed 5 nm; "
+            "QCM and the 1-5 nm CDA warning range remain limited to 20 particles"
+        )
     normalized_propagation_direction = _normalized_vector(
         propagation_direction,
         name="propagation_direction",
@@ -526,6 +782,27 @@ def solve_cda(
         [result.polarizability_si for result in polarizability_results],
         dtype=np.complex128,
     )
+    if apply_experimental_quadrupole_coupling:
+        quadrupole_polarizability_results: list[ElectricQuadrupolePolarizability] = []
+        for diameter_m in diameters:
+            quadrupole_polarizability_results.append(
+                calculate_electric_quadrupole_polarizability(
+                    wavelength_m=wavelength_m,
+                    diameter_m=float(diameter_m),
+                    medium_refractive_index=medium_refractive_index,
+                    optical_constants=optical_constants,
+                    apply_kreibig_correction=apply_kreibig_correction,
+                    kreibig_parameters=kreibig_parameters,
+                )
+            )
+        electric_quadrupole_polarizabilities_si = np.asarray(
+            [result.polarizability_si for result in quadrupole_polarizability_results],
+            dtype=np.complex128,
+        )
+    else:
+        electric_quadrupole_polarizabilities_si = np.zeros(
+            len(positions), dtype=np.complex128
+        )
     wave_number_m_inv = polarizability_results[0].wave_number_m_inv
     medium_relative_permittivity = medium_refractive_index**2
     (
@@ -557,12 +834,24 @@ def solve_cda(
         polarization=normalized_polarization,
         incident_field_amplitude_v_m=incident_field_amplitude_v_m,
     )
-    interaction_matrix = _build_interaction_matrix(
-        positions_m=interaction_positions,
-        polarizabilities_si=interaction_polarizabilities_si,
-        wave_number_m_inv=wave_number_m_inv,
-        medium_relative_permittivity=medium_relative_permittivity,
-    )
+    if apply_experimental_quadrupole_coupling:
+        interaction_matrix = _build_experimental_dipole_quadrupole_interaction_matrix(
+            interaction_positions_m=interaction_positions,
+            interaction_polarizabilities_si=interaction_polarizabilities_si,
+            physical_particle_count=len(positions),
+            electric_quadrupole_polarizabilities_si=(
+                electric_quadrupole_polarizabilities_si
+            ),
+            wave_number_m_inv=wave_number_m_inv,
+            medium_relative_permittivity=medium_relative_permittivity,
+        )
+    else:
+        interaction_matrix = _build_interaction_matrix(
+            positions_m=interaction_positions,
+            polarizabilities_si=interaction_polarizabilities_si,
+            wave_number_m_inv=wave_number_m_inv,
+            medium_relative_permittivity=medium_relative_permittivity,
+        )
     condition_number = float(np.linalg.cond(interaction_matrix))
     if not math.isfinite(condition_number) or condition_number > max_condition_number:
         raise CdaIllConditionedMatrixError(
@@ -570,9 +859,21 @@ def solve_cda(
             f"(condition number {condition_number:.6g}, limit {max_condition_number:.6g})"
         )
 
-    right_hand_side = (
-        interaction_polarizabilities_si[:, np.newaxis] * interaction_incident_fields
-    ).reshape(-1)
+    if apply_experimental_quadrupole_coupling:
+        right_hand_side = _experimental_quadrupole_right_hand_side(
+            interaction_polarizabilities_si=interaction_polarizabilities_si,
+            interaction_incident_electric_fields_v_m=interaction_incident_fields,
+            physical_particle_count=len(positions),
+            electric_quadrupole_polarizabilities_si=(
+                electric_quadrupole_polarizabilities_si
+            ),
+            wave_number_m_inv=wave_number_m_inv,
+            propagation_direction=normalized_propagation_direction,
+        )
+    else:
+        right_hand_side = (
+            interaction_polarizabilities_si[:, np.newaxis] * interaction_incident_fields
+        ).reshape(-1)
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", linalg.LinAlgWarning)
@@ -600,12 +901,40 @@ def solve_cda(
         )
 
     interaction_induced_dipoles = np.asarray(
-        flat_dipoles.reshape((len(interaction_positions), 3)),
+        flat_dipoles[: 3 * len(interaction_positions)].reshape(
+            (len(interaction_positions), 3)
+        ),
         dtype=np.complex128,
     )
     if not np.all(np.isfinite(interaction_induced_dipoles)):
         raise CdaLinearSolveError("CDA induced dipoles are non-finite")
     induced_dipoles = interaction_induced_dipoles[: len(positions)]
+    if apply_experimental_quadrupole_coupling:
+        flat_quadrupoles = flat_dipoles[3 * len(interaction_positions) :]
+        induced_electric_quadrupoles = np.asarray(
+            [
+                _quadrupole_vector_to_tensor(
+                    flat_quadrupoles[
+                        _ELECTRIC_QUADRUPOLE_COMPONENT_COUNT
+                        * particle_index : _ELECTRIC_QUADRUPOLE_COMPONENT_COUNT
+                        * (particle_index + 1)
+                    ]
+                    / wave_number_m_inv
+                )
+                for particle_index in range(len(positions))
+            ],
+            dtype=np.complex128,
+        )
+        if not np.all(np.isfinite(induced_electric_quadrupoles)):
+            raise CdaLinearSolveError("CDA induced electric quadrupoles are non-finite")
+        experimental_warnings = (
+            CdaWarning(code=WARNING_EXPERIMENTAL_QUADRUPOLE_COUPLING),
+        )
+    else:
+        induced_electric_quadrupoles = np.zeros(
+            (len(positions), 3, 3), dtype=np.complex128
+        )
+        experimental_warnings = ()
 
     return CdaSolution(
         wavelength_m=wavelength_m,
@@ -624,7 +953,7 @@ def solve_cda(
         interaction_polarizabilities_si=interaction_polarizabilities_si,
         condition_number=condition_number,
         relative_residual=relative_residual,
-        warnings=geometry_warnings + qcm_warnings,
+        warnings=geometry_warnings + qcm_warnings + experimental_warnings,
         qcm_applied=qcm_applied,
         qcm_layer_count=qcm_layer_count if qcm_applied else None,
         qcm_plasma_energy_ev=(
@@ -636,6 +965,13 @@ def solve_cda(
         qcm_bridge_count=qcm_bridge_count,
         qcm_classical_limit_pair_count=qcm_classical_limit_pair_count,
         qcm_max_relative_permittivity_contrast=qcm_max_relative_permittivity_contrast,
+        experimental_quadrupole_coupling_applied=(
+            apply_experimental_quadrupole_coupling
+        ),
+        electric_quadrupole_polarizabilities_si=(
+            electric_quadrupole_polarizabilities_si
+        ),
+        induced_electric_quadrupoles_c_m2=induced_electric_quadrupoles,
     )
 
 
@@ -657,6 +993,128 @@ def phase_correct_induced_dipoles(solution: CdaSolution) -> ComplexArray:
     )
 
 
+@lru_cache(maxsize=1)
+def _experimental_quadrupole_scattering_directions() -> tuple[FloatArray, FloatArray]:
+    """Return a deterministic sphere quadrature for experimental ED--EQ scattering.
+
+    The polar coordinate uses Gauss--Legendre nodes and the azimuth uses a
+    uniform periodic grid.  This only evaluates the far-field integral in
+    Eq. (28) of Evlyukhin et al. (2012); it is not an additional physical
+    approximation or fitted parameter.
+    """
+    cosine_theta, polar_weights = np.polynomial.legendre.leggauss(
+        _EXPERIMENTAL_QUADRUPOLE_SCATTERING_POLAR_ORDER
+    )
+    phi = np.linspace(
+        0.0,
+        2.0 * math.pi,
+        _EXPERIMENTAL_QUADRUPOLE_SCATTERING_AZIMUTHAL_ORDER,
+        endpoint=False,
+    )
+    cosine_grid, phi_grid = np.meshgrid(cosine_theta, phi, indexing="ij")
+    sine_grid = np.sqrt(np.maximum(0.0, 1.0 - cosine_grid**2))
+    directions = np.column_stack(
+        (
+            (sine_grid * np.cos(phi_grid)).ravel(),
+            (sine_grid * np.sin(phi_grid)).ravel(),
+            cosine_grid.ravel(),
+        )
+    )
+    weights = np.repeat(polar_weights, len(phi)) * (2.0 * math.pi / len(phi))
+    return (
+        np.asarray(directions, dtype=np.float64),
+        np.asarray(weights, dtype=np.float64),
+    )
+
+
+def _experimental_quadrupole_extinction_contribution(
+    solution: CdaSolution,
+    *,
+    incident_amplitude_squared: float,
+    medium_relative_permittivity: float,
+) -> float:
+    """Evaluate the electric-quadrupole term in Eq. (23) of Evlyukhin et al."""
+    quadrupole_overlap = 0.0j
+    for incident_field, quadrupole in zip(
+        solution.incident_electric_fields_v_m,
+        solution.induced_electric_quadrupoles_c_m2,
+        strict=True,
+    ):
+        conjugated_incident_gradient = -1j * solution.wave_number_m_inv * np.outer(
+            solution.propagation_direction,
+            incident_field.conjugate(),
+        )
+        quadrupole_driver = (
+            conjugated_incident_gradient + conjugated_incident_gradient.T
+        ) / 12.0
+        quadrupole_overlap += np.einsum("ab,ab", quadrupole_driver, quadrupole)
+    return (
+        solution.wave_number_m_inv
+        * float(np.imag(quadrupole_overlap))
+        / (
+            VACUUM_PERMITTIVITY_F_PER_M
+            * medium_relative_permittivity
+            * incident_amplitude_squared
+        )
+    )
+
+
+def _experimental_dipole_quadrupole_scattering_cross_section(
+    solution: CdaSolution,
+    *,
+    incident_amplitude_squared: float,
+) -> float:
+    """Integrate the ED--EQ far field of Eq. (28) of Evlyukhin et al. (2012).
+
+    Quadrupole--quadrupole and magnetic moments are absent from the solved
+    system by design.  The returned value is therefore an experimental
+    approximate scattering term, not a replacement for a complete multipole
+    method.
+    """
+    directions, angular_weights = _experimental_quadrupole_scattering_directions()
+    source_phases = np.exp(
+        -1j
+        * solution.wave_number_m_inv
+        * (directions @ solution.interaction_positions_m.T)
+    )
+    dipole_amplitudes = source_phases @ solution.interaction_induced_dipoles_c_m
+    quadrupole_directional_moments = np.einsum(
+        "qab,db->dqa",
+        solution.induced_electric_quadrupoles_c_m2,
+        directions,
+    )
+    quadrupole_amplitudes = np.einsum(
+        "dq,dqa->da",
+        source_phases[:, : len(solution.positions_m)],
+        quadrupole_directional_moments,
+    )
+    source_amplitudes = dipole_amplitudes - (
+        1j * solution.wave_number_m_inv / 6.0
+    ) * quadrupole_amplitudes
+    transverse_amplitudes = source_amplitudes - directions * np.einsum(
+        "da,da->d", directions, source_amplitudes
+    )[:, np.newaxis]
+    angular_integral = float(
+        np.sum(
+            angular_weights
+            * np.sum(np.abs(transverse_amplitudes) ** 2, axis=1)
+        )
+    )
+    vacuum_wave_number_m_inv = (
+        solution.wave_number_m_inv / solution.medium_refractive_index
+    )
+    return (
+        vacuum_wave_number_m_inv**4
+        * angular_integral
+        / (
+            16.0
+            * math.pi**2
+            * VACUUM_PERMITTIVITY_F_PER_M**2
+            * incident_amplitude_squared
+        )
+    )
+
+
 def calculate_cda_cross_sections(solution: CdaSolution) -> CdaCrossSections:
     """誘起双極子から ``C_ext``、``C_sca``、``C_abs``（m^2）を求める。
 
@@ -674,42 +1132,56 @@ def calculate_cda_cross_sections(solution: CdaSolution) -> CdaCrossSections:
     if incident_amplitude_squared <= 0.0:
         raise CdaLinearSolveError("incident electric-field amplitude is invalid")
 
-    extinction_overlap = np.vdot(
+    dipole_extinction_overlap = np.vdot(
         solution.interaction_incident_electric_fields_v_m,
         solution.interaction_induced_dipoles_c_m,
     )
     c_ext_m2 = (
         solution.wave_number_m_inv
-        * float(np.imag(extinction_overlap))
+        * float(np.imag(dipole_extinction_overlap))
         / (
             VACUUM_PERMITTIVITY_F_PER_M
             * medium_relative_permittivity
             * incident_amplitude_squared
         )
     )
-
-    scattering_overlap = 0.0j
-    for target_index, target_dipole in enumerate(solution.interaction_induced_dipoles_c_m):
-        for source_index, source_dipole in enumerate(
+    if solution.experimental_quadrupole_coupling_applied:
+        c_ext_m2 += _experimental_quadrupole_extinction_contribution(
+            solution,
+            incident_amplitude_squared=incident_amplitude_squared,
+            medium_relative_permittivity=medium_relative_permittivity,
+        )
+        c_sca_m2 = _experimental_dipole_quadrupole_scattering_cross_section(
+            solution,
+            incident_amplitude_squared=incident_amplitude_squared,
+        )
+    else:
+        scattering_overlap = 0.0j
+        for target_index, target_dipole in enumerate(
             solution.interaction_induced_dipoles_c_m
         ):
-            imaginary_green = imaginary_part_of_green_tensor(
-                relative_position_m=(
-                    solution.interaction_positions_m[target_index]
-                    - solution.interaction_positions_m[source_index]
-                ),
-                wave_number_m_inv=solution.wave_number_m_inv,
+            for source_index, source_dipole in enumerate(
+                solution.interaction_induced_dipoles_c_m
+            ):
+                imaginary_green = imaginary_part_of_green_tensor(
+                    relative_position_m=(
+                        solution.interaction_positions_m[target_index]
+                        - solution.interaction_positions_m[source_index]
+                    ),
+                    wave_number_m_inv=solution.wave_number_m_inv,
+                )
+                scattering_overlap += np.vdot(
+                    target_dipole, imaginary_green @ source_dipole
+                )
+        c_sca_m2 = (
+            solution.wave_number_m_inv**3
+            * float(np.real(scattering_overlap))
+            / (
+                VACUUM_PERMITTIVITY_F_PER_M**2
+                * medium_relative_permittivity**2
+                * incident_amplitude_squared
             )
-            scattering_overlap += np.vdot(target_dipole, imaginary_green @ source_dipole)
-    c_sca_m2 = (
-        solution.wave_number_m_inv**3
-        * float(np.real(scattering_overlap))
-        / (
-            VACUUM_PERMITTIVITY_F_PER_M**2
-            * medium_relative_permittivity**2
-            * incident_amplitude_squared
         )
-    )
     c_abs_m2 = c_ext_m2 - c_sca_m2
 
     cross_sections = (c_ext_m2, c_sca_m2, c_abs_m2)
@@ -719,7 +1191,10 @@ def calculate_cda_cross_sections(solution: CdaSolution) -> CdaCrossSections:
     rounding_tolerance = 1_000.0 * np.finfo(np.float64).eps * scale
     if c_ext_m2 < -rounding_tolerance or c_sca_m2 < -rounding_tolerance:
         raise CdaLinearSolveError("CDA produced a negative extinction or scattering cross section")
-    if c_abs_m2 < -rounding_tolerance:
+    if (
+        not solution.experimental_quadrupole_coupling_applied
+        and c_abs_m2 < -rounding_tolerance
+    ):
         raise CdaLinearSolveError("CDA produced a negative absorption cross section")
 
     return CdaCrossSections(
@@ -745,6 +1220,7 @@ def calculate_cda_spectrum(
     qcm_parameter_table: GammaGParameterTable | None = None,
     apply_qcm: bool | None = None,
     qcm_layer_count: int = DEFAULT_QCM_LAYER_COUNT,
+    apply_experimental_quadrupole_coupling: bool = False,
 ) -> CdaSpectrum:
     """同じ粒子配置について、複数真空波長の CDA スペクトルを計算する。"""
     wavelengths = np.asarray(wavelengths_m, dtype=np.float64)
@@ -777,6 +1253,9 @@ def calculate_cda_spectrum(
             qcm_parameter_table=qcm_parameter_table,
             apply_qcm=apply_qcm,
             qcm_layer_count=qcm_layer_count,
+            apply_experimental_quadrupole_coupling=(
+                apply_experimental_quadrupole_coupling
+            ),
         )
         cross_sections = calculate_cda_cross_sections(solution)
         c_ext_m2[index] = cross_sections.c_ext_m2
@@ -805,4 +1284,7 @@ def calculate_cda_spectrum(
         ),
         qcm_bridge_count=qcm_bridge_count or 0,
         qcm_classical_limit_pair_count=qcm_classical_limit_pair_count or 0,
+        experimental_quadrupole_coupling_applied=(
+            apply_experimental_quadrupole_coupling
+        ),
     )

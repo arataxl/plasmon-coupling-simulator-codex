@@ -44,6 +44,41 @@ def _simulation_payload(*, gap_nm: float = 5.0) -> dict[str, Any]:
     }
 
 
+def _exact_mie_payload(*, diameter_nm: float = 200.0) -> dict[str, Any]:
+    return {
+        "simulation_mode": "exact_mie",
+        "material": "Au",
+        "particles": [
+            {"diameter_nm": diameter_nm, "x_nm": 0.0, "y_nm": 0.0, "z_nm": 0.0}
+        ],
+        "medium": {"name": "water", "refractive_index": 1.33},
+        "light_source": {
+            "wavelength_nm": 700.0,
+            "propagation_direction": [0.0, 0.0, 1.0],
+            "polarization": [1.0, 0.0, 0.0],
+        },
+        "spectrum": {
+            "start_wavelength_nm": 600.0,
+            "end_wavelength_nm": 800.0,
+            "step_nm": 100.0,
+        },
+    }
+
+
+def _classical_large_cluster_payload(*, particle_count: int = 21) -> dict[str, Any]:
+    payload = _simulation_payload()
+    payload["particles"] = [
+        {
+            "diameter_nm": 20.0,
+            "x_nm": float(index * 26.0),
+            "y_nm": 0.0,
+            "z_nm": 0.0,
+        }
+        for index in range(particle_count)
+    ]
+    return payload
+
+
 def _post_json(path: str, payload: Mapping[str, Any]) -> tuple[int, dict[str, Any]]:
     request_body = json.dumps(payload).encode("utf-8")
     messages: list[dict[str, Any]] = []
@@ -108,6 +143,25 @@ def test_simulate_returns_spectrum_and_reference_cross_sections() -> None:
     assert response["qcm_metadata"]["qcm_applied"] is False
 
 
+def test_simulate_supports_the_single_particle_exact_mie_mode() -> None:
+    status_code, response = _post_json("/simulate", _exact_mie_payload())
+
+    assert status_code == 200
+    assert response["input"]["simulation_mode"] == "exact_mie"
+    assert response["provenance"]["model_name"] == "Exact single-sphere Mie theory (all orders)"
+    assert response["qcm_metadata"]["qcm_applied"] is False
+    assert response["experimental_quadrupole_metadata"]["applied"] is False
+    assert response["warnings"] == []
+    assert response["spectrum"]["wavelength_nm"] == [600.0, 700.0, 800.0]
+
+
+def test_simulate_accepts_exact_mie_at_the_inclusive_500_nm_upper_bound() -> None:
+    status_code, response = _post_json("/simulate", _exact_mie_payload(diameter_nm=500.0))
+
+    assert status_code == 200
+    assert response["input"]["particles"][0]["diameter_nm"] == 500.0
+
+
 def test_simulate_includes_complete_qcm_metadata_for_qcm_gap() -> None:
     status_code, response = _post_json("/simulate", _simulation_payload(gap_nm=0.5))
 
@@ -125,6 +179,21 @@ def test_simulate_includes_complete_qcm_metadata_for_qcm_gap() -> None:
             "parameters": {"layer_count": 4, "bridge_count": 1},
         }
     ]
+
+
+def test_simulate_records_the_opt_in_experimental_quadrupole_model() -> None:
+    """The API must expose the explicit experimental-model provenance and warning."""
+    payload = _simulation_payload(gap_nm=10.0)
+    payload["experimental_quadrupole_coupling"] = True
+
+    status_code, response = _post_json("/simulate", payload)
+
+    assert status_code == 200
+    assert response["experimental_quadrupole_metadata"]["applied"] is True
+    assert "Evlyukhin" in response["experimental_quadrupole_metadata"]["source"]
+    assert "experimental_quadrupole_coupling" in {
+        warning["code"] for warning in response["warnings"]
+    }
 
 
 @pytest.mark.parametrize(
@@ -238,8 +307,12 @@ def test_random_cluster_layout_uses_a_valid_seeded_3d_configuration() -> None:
         for particle in particles
         for value in (particle["x_nm"], particle["y_nm"], particle["z_nm"])
     )
+    nearest_surface_gaps_nm: list[float] = []
     for left_index, left in enumerate(particles):
-        for right in particles[left_index + 1 :]:
+        candidate_gaps_nm: list[float] = []
+        for right in particles:
+            if right is left:
+                continue
             center_distance_nm = math.dist(
                 (left["x_nm"], left["y_nm"], left["z_nm"]),
                 (right["x_nm"], right["y_nm"], right["z_nm"]),
@@ -248,7 +321,19 @@ def test_random_cluster_layout_uses_a_valid_seeded_3d_configuration() -> None:
                 left["diameter_nm"] + right["diameter_nm"]
             ) / 2.0
             assert surface_gap_nm > payload["minimum_surface_gap_nm"]
-            assert surface_gap_nm <= payload["maximum_surface_gap_nm"] + 1.0e-12
+            candidate_gaps_nm.append(surface_gap_nm)
+        nearest_surface_gaps_nm.append(min(candidate_gaps_nm))
+    assert max(nearest_surface_gaps_nm) <= payload["maximum_surface_gap_nm"] + 1.0e-12
+
+
+def test_synchronous_endpoint_requires_streaming_for_more_than_twenty_particles() -> None:
+    status_code, response = _post_json("/simulate", _classical_large_cluster_payload())
+
+    assert status_code == 422
+    assert response["error"] == {
+        "code": "large_cda_requires_stream",
+        "parameters": {"particle_count": 21, "maximum_synchronous_particles": 20},
+    }
 
 
 def test_random_cluster_layout_rejects_a_reversed_surface_gap_range() -> None:
@@ -265,6 +350,40 @@ def test_random_cluster_layout_rejects_a_reversed_surface_gap_range() -> None:
     assert status_code == 422
     assert response["error"]["code"] == "invalid_input"
     assert "maximum_surface_gap_nm" in json.dumps(response["error"]["details"])
+
+
+@pytest.mark.parametrize("particle_count", (30, 50))
+def test_random_cluster_layout_supports_large_classical_clusters(
+    particle_count: int,
+) -> None:
+    payload = {
+        "particle_count": particle_count,
+        "mean_diameter_nm": 20.0,
+        "minimum_surface_gap_nm": 5.0,
+        "maximum_surface_gap_nm": 20.0,
+        "seed": 20260722,
+    }
+
+    status_code, response = _post_json("/layouts/random-cluster", payload)
+
+    assert status_code == 200
+    particles = response["particles"]
+    nearest_surface_gaps_nm: list[float] = []
+    for left_index, left in enumerate(particles):
+        gaps_nm = []
+        for right_index, right in enumerate(particles):
+            if left_index == right_index:
+                continue
+            surface_gap_nm = math.dist(
+                (left["x_nm"], left["y_nm"], left["z_nm"]),
+                (right["x_nm"], right["y_nm"], right["z_nm"]),
+            ) - (left["diameter_nm"] + right["diameter_nm"]) / 2.0
+            gaps_nm.append(surface_gap_nm)
+        nearest_surface_gaps_nm.append(min(gaps_nm))
+
+    assert len(particles) == particle_count
+    assert min(nearest_surface_gaps_nm) > payload["minimum_surface_gap_nm"]
+    assert max(nearest_surface_gaps_nm) <= payload["maximum_surface_gap_nm"]
 
 
 def test_random_cluster_layout_does_not_expose_internal_generation_errors(
