@@ -75,6 +75,7 @@ def test_history_comparison_selects_cross_sections_and_normalizes_known_values(
             "c_ext_m2": [2.0e-18, 4.0e-18, 1.0e-18],
             "c_sca_m2": [3.0e-18, 6.0e-18, 9.0e-18],
             "c_abs_m2": [5.0e-18, 10.0e-18, 15.0e-18],
+            "raw_c_ext_m2": [1.0e-18, 3.0e-18, 2.0e-18],
         }
     }
     entry_json = json.dumps(entry)
@@ -91,6 +92,9 @@ def test_history_comparison_selects_cross_sections_and_normalizes_known_values(
     )[0].values;
     const scattering = comparison.buildSeries([entry], "c_sca", {{ mode: "absolute" }})[0].values;
     const absorption = comparison.buildSeries([entry], "c_abs", {{ mode: "absolute" }})[0].values;
+    const rawExtinction = comparison.buildSeries(
+      [entry], "c_ext", {{ mode: "absolute" }}, {{ useSmoothed: false }}
+    )[0].values;
     let outsideRangeCode = "";
     try {{
       comparison.buildSeries([entry], "c_ext", {{ mode: "reference", referenceWavelengthNm: 800 }});
@@ -101,6 +105,7 @@ def test_history_comparison_selects_cross_sections_and_normalizes_known_values(
     document.body.setAttribute("data-reference", JSON.stringify(reference));
     document.body.setAttribute("data-scattering", JSON.stringify(scattering));
     document.body.setAttribute("data-absorption", JSON.stringify(absorption));
+    document.body.setAttribute("data-raw-extinction", JSON.stringify(rawExtinction));
     document.body.setAttribute("data-outside-range-code", outsideRangeCode);
   </script>
 </body></html>"""
@@ -114,4 +119,5 @@ def test_history_comparison_selects_cross_sections_and_normalizes_known_values(
     assert math.isclose(reference[2], 1.0 / 3.0)
     assert json.loads(_attribute(document, "data-scattering")) == [3, 6, 9]
     assert json.loads(_attribute(document, "data-absorption")) == [5, 10, 15]
+    assert json.loads(_attribute(document, "data-raw-extinction")) == [1, 3, 2]
     assert _attribute(document, "data-outside-range-code") == "reference_wavelength_out_of_range"

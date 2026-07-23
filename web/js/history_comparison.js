@@ -14,11 +14,14 @@ window.PlasmonHistoryComparison = (() => {
     }
   }
 
-  function finiteSeries(entry, quantity) {
+  function finiteSeries(entry, quantity, { useSmoothed = true } = {}) {
     const field = spectrumFieldByQuantity[quantity];
     const spectrum = entry?.spectrum;
     const wavelengthsNm = spectrum?.wavelength_nm;
-    const valuesM2 = spectrum?.[field];
+    const rawField = `raw_${field}`;
+    const valuesM2 = !useSmoothed && Array.isArray(spectrum?.[rawField])
+      ? spectrum[rawField]
+      : spectrum?.[field];
     if (
       !field ||
       !Array.isArray(wavelengthsNm) ||
@@ -85,7 +88,7 @@ window.PlasmonHistoryComparison = (() => {
     return values.map((value) => value / referenceValue);
   }
 
-  function buildSeries(entries, quantity, normalization) {
+  function buildSeries(entries, quantity, normalization, options = {}) {
     const mode = normalization?.mode ?? "absolute";
     if (!Object.hasOwn(spectrumFieldByQuantity, quantity)) {
       throw new HistoryComparisonError("invalid_quantity");
@@ -94,7 +97,7 @@ window.PlasmonHistoryComparison = (() => {
       throw new HistoryComparisonError("invalid_spectrum");
     }
     return entries.map((entry) => {
-      const { wavelengthsNm, valuesM2 } = finiteSeries(entry, quantity);
+      const { wavelengthsNm, valuesM2 } = finiteSeries(entry, quantity, options);
       let values;
       if (mode === "absolute") {
         values = valuesM2.map((value) => value * squareNanometresPerSquareMetre);

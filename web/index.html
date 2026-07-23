@@ -11,16 +11,16 @@
     <script>
       document.documentElement.dataset.uiReady = "false";
     </script>
-    <link rel="stylesheet" href="/static/css/app.css?v=20260723-5" />
+    <link rel="stylesheet" href="/static/css/app.css?v=20260723-6" />
     <script defer src="/static/vendor/plotly-2.24.1.min.js"></script>
-    <script defer src="/static/js/i18n.js?v=20260723-5"></script>
-    <script defer src="/static/js/api_client.js?v=20260723-5"></script>
-    <script defer src="/static/js/input_form.js?v=20260723-5"></script>
-    <script defer src="/static/js/progress.js?v=20260723-5"></script>
-    <script defer src="/static/js/history.js?v=20260723-5"></script>
-    <script defer src="/static/js/history_comparison.js?v=20260723-5"></script>
-    <script defer src="/static/js/results.js?v=20260723-5"></script>
-    <script defer src="/static/js/app.js?v=20260723-5"></script>
+    <script defer src="/static/js/i18n.js?v=20260723-6"></script>
+    <script defer src="/static/js/api_client.js?v=20260723-6"></script>
+    <script defer src="/static/js/input_form.js?v=20260723-6"></script>
+    <script defer src="/static/js/progress.js?v=20260723-6"></script>
+    <script defer src="/static/js/history.js?v=20260723-6"></script>
+    <script defer src="/static/js/history_comparison.js?v=20260723-6"></script>
+    <script defer src="/static/js/results.js?v=20260723-6"></script>
+    <script defer src="/static/js/app.js?v=20260723-6"></script>
   </head>
   <body>
     <header class="site-header">
@@ -299,6 +299,10 @@
               </dl>
             </details>
             <ul id="warning-list" class="warning-list" aria-live="polite"></ul>
+            <label id="result-smoothing-control" class="result-smoothing-control" hidden>
+              <input id="result-smoothing" type="checkbox" checked />
+              <span data-i18n="result.smoothing">スムージング（Savitzky-Golay）</span>
+            </label>
             <div id="spectrum-plot" class="spectrum-plot" data-i18n-aria-label="result.spectrumAria" aria-label="CDAスペクトルのグラフ"></div>
             <section class="history-panel" aria-labelledby="history-title">
               <div class="history-heading">
@@ -309,6 +313,8 @@
                 </div>
                 <div class="history-actions">
                   <button id="history-compare" type="button" class="secondary-button" disabled data-i18n="history.compare">Compare selected spectra</button>
+                  <button id="history-select-all" type="button" class="secondary-button" disabled data-i18n="history.selectAll">すべて選択</button>
+                  <button id="history-deselect-all" type="button" class="secondary-button" disabled data-i18n="history.deselectAll">すべて解除</button>
                   <button id="history-download-all" type="button" class="secondary-button" disabled data-i18n="history.downloadAll">Download all CSV</button>
                   <button id="history-clear" type="button" class="secondary-button" disabled data-i18n="history.clear">Clear all</button>
                 </div>

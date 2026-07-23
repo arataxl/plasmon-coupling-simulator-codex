@@ -109,7 +109,9 @@ def test_completed_results_render_history_and_localized_legend_in_the_browser_do
   <button data-language="ja">日本語</button><button data-language="en">English</button>
   <span id="translated-cross-section" data-i18n="result.cExt">Cext</span>
   <button id="download-csv"></button><button id="download-json"></button>
-  <button id="history-compare"></button><button id="history-download-all"></button>
+  <label id="result-smoothing-control" hidden><input id="result-smoothing" type="checkbox" checked /></label>
+  <button id="history-compare"></button><button id="history-select-all"></button>
+  <button id="history-deselect-all"></button><button id="history-download-all"></button>
   <button id="history-clear"></button><div id="history-list"></div>
   <select id="history-compare-quantity"><option value="c_ext">Cext</option><option value="c_sca">Csca</option><option value="c_abs">Cabs</option></select>
   <select id="history-normalization-mode"><option value="absolute">absolute</option><option value="peak">peak</option><option value="reference">reference</option></select>
@@ -146,14 +148,34 @@ def test_completed_results_render_history_and_localized_legend_in_the_browser_do
       window.PlasmonResults.initialize();
       const result = {result};
       window.PlasmonResults.completeResult(result);
-      window.PlasmonResults.completeResult(result);
+      window.PlasmonResults.completeResult({{
+        ...result,
+        experimental_quadrupole_metadata: {{ applied: true }},
+      }});
       document.body.setAttribute("data-initial-language", window.PlasmonI18n.getLanguage());
       document.body.setAttribute("data-history-count", document.querySelectorAll(".history-entry").length);
       document.body.setAttribute("data-stored-history-count", JSON.parse(window.localStorage.getItem("plasmon-coupling-simulator.history.v1")).length);
       document.body.setAttribute("data-japanese-legend", document.getElementById("spectrum-plot").textContent);
+      document.body.setAttribute(
+        "data-japanese-history-labels",
+        [...document.querySelectorAll(".history-entry-label")].map((item) => item.textContent).join("|"),
+      );
+      document.getElementById("history-select-all").click();
+      document.body.setAttribute(
+        "data-all-selected",
+        String([...document.querySelectorAll('.history-entry input[type="checkbox"]')].every((item) => item.checked)),
+      );
+      document.body.setAttribute(
+        "data-compare-enabled",
+        String(!document.getElementById("history-compare").disabled),
+      );
       document.querySelector('[data-language="en"]').click();
       await new Promise((resolve) => window.setTimeout(resolve, 10));
       document.body.setAttribute("data-english-legend", document.getElementById("spectrum-plot").textContent);
+      document.body.setAttribute(
+        "data-english-history-labels",
+        [...document.querySelectorAll(".history-entry-label")].map((item) => item.textContent).join("|"),
+      );
       document.body.setAttribute("data-stored-language", window.localStorage.getItem("{LANGUAGE_STORAGE_KEY}"));
       await window.PlasmonI18n.setLanguage("ja", {{ remember: false }});
       await window.PlasmonI18n.initialize();
@@ -177,7 +199,6 @@ def test_completed_results_render_history_and_localized_legend_in_the_browser_do
         document.querySelector("#history-detail-particles li").textContent,
       );
       document.getElementById("history-detail-close").click();
-      document.querySelectorAll('.history-entry input[type="checkbox"]').forEach((select) => select.click());
       document.getElementById("history-compare-quantity").value = "c_sca";
       document.getElementById("history-normalization-mode").value = "peak";
       document.getElementById("history-normalization-mode").dispatchEvent(new Event("change"));
@@ -206,6 +227,11 @@ def test_completed_results_render_history_and_localized_legend_in_the_browser_do
         "data-reference-comparison-values",
         document.getElementById("spectrum-plot").dataset.traceValues,
       );
+      document.getElementById("history-deselect-all").click();
+      document.body.setAttribute(
+        "data-all-deselected",
+        String([...document.querySelectorAll('.history-entry input[type="checkbox"]')].every((item) => !item.checked)),
+      );
     }})();
   </script>
 </body></html>"""
@@ -216,7 +242,13 @@ def test_completed_results_render_history_and_localized_legend_in_the_browser_do
     assert _attribute(document, "data-history-count") == "2"
     assert _attribute(document, "data-stored-history-count") == "2"
     assert _attribute(document, "data-japanese-legend") == "消失強度（Cext）|散乱強度（Csca）|吸収強度（Cabs）"
+    assert japanese["history.quadrupoleOn"] in _attribute(document, "data-japanese-history-labels")
+    assert japanese["history.quadrupoleOff"] in _attribute(document, "data-japanese-history-labels")
+    assert _attribute(document, "data-all-selected") == "true"
+    assert _attribute(document, "data-compare-enabled") == "true"
     assert _attribute(document, "data-english-legend") == "Cext|Csca|Cabs"
+    assert english["history.quadrupoleOn"] in _attribute(document, "data-english-history-labels")
+    assert english["history.quadrupoleOff"] in _attribute(document, "data-english-history-labels")
     assert _attribute(document, "data-stored-language") == "en"
     assert _attribute(document, "data-remembered-language") == "en"
     assert _attribute(document, "data-history-summary") == " / ".join(
@@ -250,3 +282,4 @@ def test_completed_results_render_history_and_localized_legend_in_the_browser_do
     for values in reference_values:
         assert math.isclose(values[0], 2.0 / 3.0)
         assert math.isclose(values[1], 4.0 / 3.0)
+    assert _attribute(document, "data-all-deselected") == "true"

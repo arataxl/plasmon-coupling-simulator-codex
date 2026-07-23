@@ -43,6 +43,7 @@ from src.schemas.simulation import (
     SimulationRequest,
     SpectrumRangeInput,
 )
+from src.services.spectrum_smoothing import smooth_spectrum_cross_sections
 
 
 QCM_PARAMETER_SOURCE = "Esteban et al. (2012), DOI: 10.1038/ncomms1806"
@@ -289,6 +290,44 @@ def _geometric_cross_section_m2(diameters_m: np.ndarray) -> float:
     return geometric_cross_section_m2
 
 
+def _spectrum_result(
+    *,
+    wavelength_nm: np.ndarray,
+    c_ext_m2: np.ndarray,
+    c_sca_m2: np.ndarray,
+    c_abs_m2: np.ndarray,
+    geometric_cross_section_m2: float,
+) -> SpectrumResult:
+    """生データを残して、API 表示用後処理済みスペクトルを構成する。"""
+    cross_sections = smooth_spectrum_cross_sections(
+        c_ext_m2=c_ext_m2,
+        c_sca_m2=c_sca_m2,
+        c_abs_m2=c_abs_m2,
+    )
+    return SpectrumResult(
+        wavelength_nm=[float(value) for value in wavelength_nm],
+        c_ext_m2=[float(value) for value in cross_sections.c_ext_m2],
+        c_sca_m2=[float(value) for value in cross_sections.c_sca_m2],
+        c_abs_m2=[float(value) for value in cross_sections.c_abs_m2],
+        q_ext=[
+            float(value / geometric_cross_section_m2)
+            for value in cross_sections.c_ext_m2
+        ],
+        q_sca=[
+            float(value / geometric_cross_section_m2)
+            for value in cross_sections.c_sca_m2
+        ],
+        q_abs=[
+            float(value / geometric_cross_section_m2)
+            for value in cross_sections.c_abs_m2
+        ],
+        geometric_cross_section_m2=geometric_cross_section_m2,
+        raw_c_ext_m2=[float(value) for value in cross_sections.raw_c_ext_m2],
+        raw_c_sca_m2=[float(value) for value in cross_sections.raw_c_sca_m2],
+        raw_c_abs_m2=[float(value) for value in cross_sections.raw_c_abs_m2],
+    )
+
+
 def _build_simulation_result(
     *,
     simulation: SimulationInput,
@@ -328,14 +367,11 @@ def _build_simulation_result(
             wavelength_nm=simulation.light_source.wavelength_nm,
             geometric_cross_section_m2=geometric_cross_section_m2,
         ),
-        spectrum=SpectrumResult(
-            wavelength_nm=[float(value) for value in wavelength_grid_nm],
-            c_ext_m2=[float(value) for value in c_ext_m2],
-            c_sca_m2=[float(value) for value in c_sca_m2],
-            c_abs_m2=[float(value) for value in c_abs_m2],
-            q_ext=[float(value / geometric_cross_section_m2) for value in c_ext_m2],
-            q_sca=[float(value / geometric_cross_section_m2) for value in c_sca_m2],
-            q_abs=[float(value / geometric_cross_section_m2) for value in c_abs_m2],
+        spectrum=_spectrum_result(
+            wavelength_nm=wavelength_grid_nm,
+            c_ext_m2=c_ext_m2,
+            c_sca_m2=c_sca_m2,
+            c_abs_m2=c_abs_m2,
             geometric_cross_section_m2=geometric_cross_section_m2,
         ),
         qcm_metadata=qcm_metadata,
@@ -381,16 +417,11 @@ def _build_exact_mie_result(
             q_sca=float(reference_spectrum.q_sca[reference_index]),
             q_abs=float(reference_spectrum.q_abs[reference_index]),
         ),
-        spectrum=SpectrumResult(
-            wavelength_nm=[
-                float(value) for value in metres_to_nanometres(spectrum.wavelength_m)
-            ],
-            c_ext_m2=[float(value) for value in spectrum.c_ext_m2],
-            c_sca_m2=[float(value) for value in spectrum.c_sca_m2],
-            c_abs_m2=[float(value) for value in spectrum.c_abs_m2],
-            q_ext=[float(value) for value in spectrum.q_ext],
-            q_sca=[float(value) for value in spectrum.q_sca],
-            q_abs=[float(value) for value in spectrum.q_abs],
+        spectrum=_spectrum_result(
+            wavelength_nm=np.asarray(metres_to_nanometres(spectrum.wavelength_m)),
+            c_ext_m2=spectrum.c_ext_m2,
+            c_sca_m2=spectrum.c_sca_m2,
+            c_abs_m2=spectrum.c_abs_m2,
             geometric_cross_section_m2=geometric_cross_section_m2,
         ),
         qcm_metadata=QcmResultMetadata(qcm_applied=False),

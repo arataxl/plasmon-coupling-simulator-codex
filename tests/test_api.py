@@ -143,6 +143,35 @@ def test_simulate_returns_spectrum_and_reference_cross_sections() -> None:
     assert response["qcm_metadata"]["qcm_applied"] is False
 
 
+def test_simulate_exposes_raw_and_smoothed_spectra_consistently() -> None:
+    """API は表示用後処理と切替用の生断面積を同時に返す。"""
+    payload = _simulation_payload()
+    payload["spectrum"] = {
+        "start_wavelength_nm": 580.0,
+        "end_wavelength_nm": 660.0,
+        "step_nm": 20.0,
+    }
+
+    status_code, response = _post_json("/simulate", payload)
+
+    assert status_code == 200
+    spectrum = response["spectrum"]
+    assert len(spectrum["raw_c_ext_m2"]) == 5
+    assert len(spectrum["raw_c_sca_m2"]) == 5
+    assert len(spectrum["raw_c_abs_m2"]) == 5
+    np_ext = spectrum["c_ext_m2"]
+    np_sca = spectrum["c_sca_m2"]
+    assert spectrum["c_abs_m2"] == pytest.approx(
+        [
+            extinction - scattering
+            for extinction, scattering in zip(np_ext, np_sca, strict=True)
+        ]
+    )
+    assert spectrum["q_ext"] == pytest.approx(
+        [value / spectrum["geometric_cross_section_m2"] for value in np_ext]
+    )
+
+
 def test_simulate_supports_the_single_particle_exact_mie_mode() -> None:
     status_code, response = _post_json("/simulate", _exact_mie_payload())
 

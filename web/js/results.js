@@ -224,6 +224,23 @@ window.PlasmonResults = (() => {
     setQcmDetail("qcm-detail-interpolation", metadata.qcm_interpolation);
   }
 
+  function smoothingEnabled() {
+    const control = document.getElementById("result-smoothing");
+    return control ? control.checked : true;
+  }
+
+  function spectrumForDisplay(spectrum) {
+    if (smoothingEnabled()) {
+      return spectrum;
+    }
+    return {
+      ...spectrum,
+      c_ext_m2: spectrum.raw_c_ext_m2 ?? spectrum.c_ext_m2,
+      c_sca_m2: spectrum.raw_c_sca_m2 ?? spectrum.c_sca_m2,
+      c_abs_m2: spectrum.raw_c_abs_m2 ?? spectrum.c_abs_m2,
+    };
+  }
+
   function renderResult(result, { preserveDownloadMetadata = false } = {}) {
     comparisonActive = false;
     clearComparisonError();
@@ -231,7 +248,7 @@ window.PlasmonResults = (() => {
     if (!preserveDownloadMetadata || !latestDownloadMetadata) {
       latestDownloadMetadata = buildDownloadMetadata(result);
     }
-    const spectrum = result.spectrum;
+    const spectrum = spectrumForDisplay(result.spectrum);
     const toSquareNanometres = (values) =>
       values.map((value) => value * squareNanometresPerSquareMetre);
     const traces = [
@@ -273,6 +290,7 @@ window.PlasmonResults = (() => {
 
     renderQcmNotice(result.qcm_metadata);
     renderWarnings(result.warnings, Boolean(result.qcm_metadata?.qcm_applied));
+    document.getElementById("result-smoothing-control").hidden = false;
     document.getElementById("download-csv").disabled = false;
     document.getElementById("download-json").disabled = false;
   }
@@ -358,6 +376,9 @@ window.PlasmonResults = (() => {
       particleCount: entry.particle_count,
       mode: t(modeKey),
       qcm: entry.qcm_applied ? t("history.qcmOn") : t("history.qcmOff"),
+      quadrupole: entry.experimental_quadrupole_coupling
+        ? t("history.quadrupoleOn")
+        : t("history.quadrupoleOff"),
     });
   }
 
@@ -526,14 +547,36 @@ window.PlasmonResults = (() => {
 
   function updateHistoryControls(entries = window.PlasmonHistoryStore.read()) {
     const compare = document.getElementById("history-compare");
+    const selectAll = document.getElementById("history-select-all");
+    const deselectAll = document.getElementById("history-deselect-all");
     const exportAll = document.getElementById("history-download-all");
     const clear = document.getElementById("history-clear");
-    if (!compare || !exportAll || !clear) {
+    if (!compare || !selectAll || !deselectAll || !exportAll || !clear) {
       return;
     }
     compare.disabled = selectedHistoryIds.size < 2;
+    selectAll.disabled = entries.length === 0;
+    deselectAll.disabled = entries.length === 0;
     exportAll.disabled = entries.length === 0;
     clear.disabled = entries.length === 0;
+  }
+
+  function selectAllHistory() {
+    const entries = window.PlasmonHistoryStore.read();
+    selectedHistoryIds = new Set(entries.map((entry) => entry.id));
+    renderHistory(entries);
+    updateHistoryControls(entries);
+  }
+
+  function deselectAllHistory() {
+    selectedHistoryIds = new Set();
+    const wasComparisonActive = comparisonActive;
+    comparisonActive = false;
+    if (wasComparisonActive && latestResult) {
+      renderResult(latestResult, { preserveDownloadMetadata: true });
+    }
+    renderHistory();
+    updateHistoryControls();
   }
 
   const comparisonQuantityTranslationKey = Object.freeze({
@@ -637,6 +680,7 @@ window.PlasmonResults = (() => {
         entries,
         controls.quantity,
         controls.normalization,
+        { useSmoothed: smoothingEnabled() },
       );
     } catch (error) {
       showComparisonError(error);
@@ -682,7 +726,16 @@ window.PlasmonResults = (() => {
   function initialize() {
     document.getElementById("download-csv").addEventListener("click", downloadCsv);
     document.getElementById("download-json").addEventListener("click", downloadJson);
+    document.getElementById("result-smoothing").addEventListener("change", () => {
+      if (comparisonActive && selectedHistoryIds.size >= 2) {
+        compareSelectedHistory();
+      } else if (latestResult) {
+        renderResult(latestResult, { preserveDownloadMetadata: true });
+      }
+    });
     document.getElementById("history-compare").addEventListener("click", compareSelectedHistory);
+    document.getElementById("history-select-all").addEventListener("click", selectAllHistory);
+    document.getElementById("history-deselect-all").addEventListener("click", deselectAllHistory);
     document.getElementById("history-compare-quantity").addEventListener("change", refreshActiveComparison);
     document.getElementById("history-normalization-mode").addEventListener("change", () => {
       updateComparisonSettingsVisibility();

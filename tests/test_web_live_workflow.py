@@ -298,9 +298,9 @@ def test_real_page_keeps_japanese_default_and_renders_history_after_sse(
             """
             (() => {
               document.getElementById('apply-dimer').click();
-              document.getElementById('start-wavelength-nm').value = '600';
-              document.getElementById('end-wavelength-nm').value = '620';
-              document.getElementById('wavelength-step-nm').value = '20';
+              document.getElementById('start-wavelength-nm').value = '400';
+              document.getElementById('end-wavelength-nm').value = '520';
+              document.getElementById('wavelength-step-nm').value = '10';
             })()
             """
         )
@@ -317,6 +317,16 @@ def test_real_page_keeps_japanese_default_and_renders_history_after_sse(
             timeout_seconds=30,
             description="the first SSE-completed history entry",
         )
+        assert client.evaluate(
+            "!document.getElementById('result-smoothing-control').hidden && "
+            "document.getElementById('result-smoothing').checked"
+        ) is True
+        assert client.evaluate(
+            "JSON.parse(localStorage.getItem('plasmon-coupling-simulator.history.v1'))[0].spectrum."
+            "raw_c_ext_m2.some((value, index, raw) => value !== "
+            "JSON.parse(localStorage.getItem('plasmon-coupling-simulator.history.v1'))[0].spectrum.c_ext_m2[index])"
+        ) is True
+        client.evaluate("document.getElementById('experimental-quadrupole-coupling').click()")
         client.evaluate("document.getElementById('simulation-form').requestSubmit()")
         _wait_until(
             lambda: client.evaluate(
@@ -325,6 +335,26 @@ def test_real_page_keeps_japanese_default_and_renders_history_after_sse(
             timeout_seconds=30,
             description="the second SSE-completed history entry",
         )
+        labels = client.evaluate(
+            "[...document.querySelectorAll('.history-entry-label')].map((item) => item.textContent)"
+        )
+        assert any("四極子: あり" in label for label in labels)
+        assert any("四極子: なし" in label for label in labels)
+        smoothed_result_values = client.evaluate(
+            "JSON.stringify(document.getElementById('spectrum-plot').data.map((trace) => trace.y))"
+        )
+        client.evaluate(
+            "(() => { const control = document.getElementById('result-smoothing'); "
+            "control.checked = false; control.dispatchEvent(new Event('change')); })()"
+        )
+        raw_result_values = client.evaluate(
+            "JSON.stringify(document.getElementById('spectrum-plot').data.map((trace) => trace.y))"
+        )
+        assert raw_result_values != smoothed_result_values
+        client.evaluate(
+            "(() => { const control = document.getElementById('result-smoothing'); "
+            "control.checked = true; control.dispatchEvent(new Event('change')); })()"
+        )
         client.evaluate("document.querySelector('.history-detail-button').click()")
         assert client.evaluate("document.getElementById('history-detail-dialog').open") is True
         assert client.evaluate("document.querySelectorAll('#history-detail-particles li').length") == 2
@@ -332,9 +362,46 @@ def test_real_page_keeps_japanese_default_and_renders_history_after_sse(
         client.evaluate(
             """
             (() => {
-              document.querySelectorAll('.history-entry input[type="checkbox"]').forEach((item) => {
-                item.click();
-              });
+              document.getElementById('history-select-all').click();
+            })()
+            """
+        )
+        assert client.evaluate(
+            "[...document.querySelectorAll('.history-entry input[type=checkbox]')].every((item) => item.checked)"
+        ) is True
+        assert client.evaluate("!document.getElementById('history-compare').disabled") is True
+        client.evaluate(
+            """
+            (() => {
+              const smoothing = document.getElementById('result-smoothing');
+              smoothing.checked = false;
+              smoothing.dispatchEvent(new Event('change'));
+              document.getElementById('history-compare').click();
+            })()
+            """
+        )
+        _wait_until(
+            lambda: client.evaluate(
+                "Boolean(document.getElementById('spectrum-plot').data && "
+                "document.getElementById('spectrum-plot').data.length === 2)"
+            ),
+            timeout_seconds=15,
+            description="the raw-spectrum comparison",
+        )
+        raw_comparison_values = client.evaluate(
+            "JSON.stringify(document.getElementById('spectrum-plot').data.map((trace) => trace.y))"
+        )
+        client.evaluate(
+            "(() => { const smoothing = document.getElementById('result-smoothing'); "
+            "smoothing.checked = true; smoothing.dispatchEvent(new Event('change')); })()"
+        )
+        smoothed_comparison_values = client.evaluate(
+            "JSON.stringify(document.getElementById('spectrum-plot').data.map((trace) => trace.y))"
+        )
+        assert raw_comparison_values != smoothed_comparison_values
+        client.evaluate(
+            """
+            (() => {
               const quantity = document.getElementById('history-compare-quantity');
               quantity.value = 'c_sca';
               quantity.dispatchEvent(new Event('change'));
@@ -380,7 +447,7 @@ def test_real_page_keeps_japanese_default_and_renders_history_after_sse(
             """
             (() => {
               const reference = document.getElementById('history-reference-wavelength-nm');
-              reference.value = '610';
+              reference.value = '460';
               reference.dispatchEvent(new Event('change'));
             })()
             """
@@ -397,16 +464,21 @@ def test_real_page_keeps_japanese_default_and_renders_history_after_sse(
             document.getElementById('spectrum-plot').data.every((trace) => {
               const wavelengths = trace.x;
               const values = trace.y;
-              const upper = wavelengths.findIndex((wavelength) => wavelength >= 610);
+              const upper = wavelengths.findIndex((wavelength) => wavelength >= 460);
               if (upper < 0) return false;
-              if (wavelengths[upper] === 610) return Math.abs(values[upper] - 1) < 1e-12;
+              if (wavelengths[upper] === 460) return Math.abs(values[upper] - 1) < 1e-12;
               const lower = upper - 1;
-              const fraction = (610 - wavelengths[lower]) / (wavelengths[upper] - wavelengths[lower]);
+              const fraction = (460 - wavelengths[lower]) / (wavelengths[upper] - wavelengths[lower]);
               const interpolated = values[lower] + fraction * (values[upper] - values[lower]);
               return Math.abs(interpolated - 1) < 1e-12;
             })
             """
         ) is True
+        client.evaluate("document.getElementById('history-deselect-all').click()")
+        assert client.evaluate(
+            "[...document.querySelectorAll('.history-entry input[type=checkbox]')].every((item) => !item.checked)"
+        ) is True
+        assert client.evaluate("document.getElementById('history-compare').disabled") is True
         assert client.evaluate("document.getElementById('error-message').hidden") is True
 
         # 最後の評価で、直前までに到着したコンソール／例外イベントも回収する。

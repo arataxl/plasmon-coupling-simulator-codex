@@ -131,6 +131,9 @@ class SpectrumResult(BaseModel):
     q_sca: list[float]
     q_abs: list[float]
     geometric_cross_section_m2: float = Field(gt=0)
+    raw_c_ext_m2: list[float] | None = None
+    raw_c_sca_m2: list[float] | None = None
+    raw_c_abs_m2: list[float] | None = None
 
     @model_validator(mode="after")
     def validate_matching_lengths(self) -> Self:
@@ -145,6 +148,12 @@ class SpectrumResult(BaseModel):
         }
         if len(lengths) != 1 or not self.wavelength_nm:
             raise ValueError("spectrum arrays must be non-empty and have matching lengths")
+        raw_arrays = (self.raw_c_ext_m2, self.raw_c_sca_m2, self.raw_c_abs_m2)
+        if any(values is not None for values in raw_arrays):
+            if any(values is None for values in raw_arrays):
+                raise ValueError("raw spectrum arrays must be provided together")
+            if any(len(values) != len(self.wavelength_nm) for values in raw_arrays):
+                raise ValueError("raw spectrum arrays must match wavelength array length")
         return self
 
 

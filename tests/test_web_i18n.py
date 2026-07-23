@@ -45,7 +45,12 @@ def test_japanese_and_english_translation_catalogues_have_matching_keys() -> Non
         "result.cExt",
         "result.cSca",
         "result.cAbs",
+        "result.smoothing",
         "history.title",
+        "history.quadrupoleOn",
+        "history.quadrupoleOff",
+        "history.selectAll",
+        "history.deselectAll",
         "preview.showParticleNumbers",
     } <= japanese_keys
 
