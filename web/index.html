@@ -11,16 +11,16 @@
     <script>
       document.documentElement.dataset.uiReady = "false";
     </script>
-    <link rel="stylesheet" href="/static/css/app.css?v=20260723-6" />
+    <link rel="stylesheet" href="/static/css/app.css?v=20260723-7" />
     <script defer src="/static/vendor/plotly-2.24.1.min.js"></script>
-    <script defer src="/static/js/i18n.js?v=20260723-6"></script>
-    <script defer src="/static/js/api_client.js?v=20260723-6"></script>
-    <script defer src="/static/js/input_form.js?v=20260723-6"></script>
-    <script defer src="/static/js/progress.js?v=20260723-6"></script>
-    <script defer src="/static/js/history.js?v=20260723-6"></script>
-    <script defer src="/static/js/history_comparison.js?v=20260723-6"></script>
-    <script defer src="/static/js/results.js?v=20260723-6"></script>
-    <script defer src="/static/js/app.js?v=20260723-6"></script>
+    <script defer src="/static/js/i18n.js?v=20260723-7"></script>
+    <script defer src="/static/js/api_client.js?v=20260723-7"></script>
+    <script defer src="/static/js/input_form.js?v=20260723-7"></script>
+    <script defer src="/static/js/progress.js?v=20260723-7"></script>
+    <script defer src="/static/js/history.js?v=20260723-7"></script>
+    <script defer src="/static/js/history_comparison.js?v=20260723-7"></script>
+    <script defer src="/static/js/results.js?v=20260723-7"></script>
+    <script defer src="/static/js/app.js?v=20260723-7"></script>
   </head>
   <body>
     <header class="site-header">
@@ -301,13 +301,14 @@
             <ul id="warning-list" class="warning-list" aria-live="polite"></ul>
             <label id="result-smoothing-control" class="result-smoothing-control" hidden>
               <span data-i18n="result.smoothingLabel">スムージング（Savitzky-Golay）</span>
-              <select id="smoothing-toggle">
+              <input id="smoothing-toggle" type="hidden" value="medium" />
+              <select id="result-smoothing">
                 <option value="off" data-i18n="result.smoothingOff">オフ</option>
-                <option value="low" data-i18n="result.smoothingLow">弱（約20 nm）</option>
+                <option value="low" data-i18n="result.smoothingLow">低（±20 nm）</option>
                 <option value="medium" selected data-i18n="result.smoothingMedium">中（約40 nm）</option>
-                <option value="high" data-i18n="result.smoothingHigh">強（約70 nm）</option>
-                <option value="very_high" data-i18n="result.smoothingVeryHigh">非常に強（約100 nm）</option>
-                <option value="extreme" data-i18n="result.smoothingExtreme">極強（約150 nm）</option>
+                <option value="high" data-i18n="result.smoothingHigh">高（±70 nm）</option>
+                <option value="very_high" data-i18n="result.smoothingVeryHigh">超高（±100 nm）</option>
+                <option value="extreme" data-i18n="result.smoothingExtreme">極高（±150 nm）</option>
               </select>
             </label>
             <div id="spectrum-plot" class="spectrum-plot" data-i18n-aria-label="result.spectrumAria" aria-label="CDAスペクトルのグラフ"></div>

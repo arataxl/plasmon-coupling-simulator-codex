@@ -1,5 +1,12 @@
 window.PlasmonResults = (() => {
   const squareNanometresPerSquareMetre = 1.0e18;
+  const SMOOTHING_COEFFS = Object.freeze({
+    low: [-0.08571429, 0.34285714, 0.48571429, 0.34285714, -0.08571429],
+    medium: [-0.09090909, 0.06060606, 0.16883117, 0.23376623, 0.25541126, 0.23376623, 0.16883117, 0.06060606, -0.09090909],
+    high: [-0.07058824, -0.01176471, 0.03800905, 0.07873303, 0.11040724, 0.13303167, 0.14660633, 0.15113122, 0.14660633, 0.13303167, 0.11040724, 0.07873303, 0.03800905, -0.01176471, -0.07058824],
+    very_high: [0.0447205, -0.02484472, -0.05001635, -0.04315136, -0.01515297, 0.02452935, 0.06789993, 0.10841682, 0.14099187, 0.16199065, 0.16923254, 0.16199065, 0.14099187, 0.10841682, 0.06789993, 0.02452935, -0.01515297, -0.04315136, -0.05001635, -0.02484472, 0.0447205],
+    extreme: [0.03812317, 0, -0.02275255, -0.0328648, -0.0328648, -0.02507837, -0.01162908, 0.00556174, 0.024775, 0.04449388, 0.06340378, 0.08039236, 0.0945495, 0.10516736, 0.11174032, 0.11396501, 0.11174032, 0.10516736, 0.0945495, 0.08039236, 0.06340378, 0.04449388, 0.024775, 0.00556174, -0.01162908, -0.02507837, -0.0328648, -0.0328648, -0.02275255, 0, 0.03812317],
+  });
   let latestResult = null;
   let latestDownloadMetadata = null;
   let selectedHistoryIds = new Set();
@@ -225,24 +232,71 @@ window.PlasmonResults = (() => {
     setQcmDetail("qcm-detail-interpolation", metadata.qcm_interpolation);
   }
 
-  function smoothingEnabled() {
-    const control = document.getElementById("smoothing-toggle");
-    return !control || control.value !== "off";
+  function savgolFilter(y, coeffs) {
+    if (!Array.isArray(coeffs) || coeffs.length % 2 === 0 || y.length < coeffs.length) {
+      return y;
+    }
+    const half = Math.floor(coeffs.length / 2);
+    const padded = [
+      ...y.slice(1, half + 1).reverse(),
+      ...y,
+      ...y.slice(-half - 1, -1).reverse(),
+    ];
+    const result = new Float64Array(y.length);
+    for (let index = 0; index < y.length; index += 1) {
+      let sum = 0;
+      for (let coeffIndex = 0; coeffIndex < coeffs.length; coeffIndex += 1) {
+        sum += coeffs[coeffIndex] * padded[index + coeffIndex];
+      }
+      result[index] = sum;
+    }
+    return result;
+  }
+
+  function smoothingControl() {
+    return document.getElementById("result-smoothing") ?? document.getElementById("smoothing-toggle");
+  }
+
+  function syncLegacySmoothingControl(level) {
+    const legacyControl = document.getElementById("smoothing-toggle");
+    if (legacyControl) {
+      legacyControl.value = level;
+    }
+  }
+
+  function smoothingLevel() {
+    const control = document.getElementById("result-smoothing");
+    const legacyControl = document.getElementById("smoothing-toggle");
+    if (control) {
+      return control.value;
+    }
+    return legacyControl?.value ?? "medium";
   }
 
   function spectrumForDisplay(spectrum) {
-    if (smoothingEnabled()) {
-      return spectrum;
+    const rawExt = spectrum.raw_c_ext_m2 ?? spectrum.c_ext_m2;
+    const rawSca = spectrum.raw_c_sca_m2 ?? spectrum.c_sca_m2;
+    const level = smoothingLevel();
+    if (level === "off") {
+      const rawAbs = spectrum.raw_c_abs_m2 ?? spectrum.c_abs_m2;
+      return { ...spectrum, c_ext_m2: rawExt, c_sca_m2: rawSca, c_abs_m2: rawAbs };
     }
-    return {
-      ...spectrum,
-      c_ext_m2: spectrum.raw_c_ext_m2 ?? spectrum.c_ext_m2,
-      c_sca_m2: spectrum.raw_c_sca_m2 ?? spectrum.c_sca_m2,
-      c_abs_m2: spectrum.raw_c_abs_m2 ?? spectrum.c_abs_m2,
-    };
+    const coeffs = SMOOTHING_COEFFS[level];
+    const smoothedExt = savgolFilter(rawExt, coeffs);
+    const smoothedSca = savgolFilter(rawSca, coeffs);
+    const smoothedAbs = smoothedExt.map((value, index) => value - smoothedSca[index]);
+    return { ...spectrum, c_ext_m2: smoothedExt, c_sca_m2: smoothedSca, c_abs_m2: smoothedAbs };
   }
 
-  function renderResult(result, { preserveDownloadMetadata = false } = {}) {
+  function plotSpectrum(traces, layout, config, { preferReact = true } = {}) {
+    if (preferReact && typeof window.Plotly.react === "function") {
+      window.Plotly.react("spectrum-plot", traces, layout, config);
+      return;
+    }
+    window.Plotly.newPlot("spectrum-plot", traces, layout, config);
+  }
+
+  function renderResult(result, { preserveDownloadMetadata = false, resetZoom = false } = {}) {
     comparisonActive = false;
     clearComparisonError();
     latestResult = result;
@@ -275,19 +329,16 @@ window.PlasmonResults = (() => {
         line: { color: "#b42318", width: 2 },
       },
     ];
-    window.Plotly.newPlot(
-      "spectrum-plot",
-      traces,
-      {
-        margin: { t: 24, r: 20, b: 58, l: 72 },
-        xaxis: { title: t("result.xAxis") },
-        yaxis: { title: t("result.yAxis") },
-        legend: { orientation: "h", y: 1.12 },
-        paper_bgcolor: "#ffffff",
-        plot_bgcolor: "#ffffff",
-      },
-      { responsive: true, displaylogo: false },
-    );
+    const layout = {
+      margin: { t: 24, r: 20, b: 58, l: 72 },
+      xaxis: { title: t("result.xAxis") },
+      yaxis: { title: t("result.yAxis") },
+      legend: { orientation: "h", y: 1.12 },
+      paper_bgcolor: "#ffffff",
+      plot_bgcolor: "#ffffff",
+    };
+    const config = { responsive: true, displaylogo: false };
+    plotSpectrum(traces, layout, config, { preferReact: !resetZoom });
 
     renderQcmNotice(result.qcm_metadata);
     renderWarnings(result.warnings, Boolean(result.qcm_metadata?.qcm_applied));
@@ -300,7 +351,7 @@ window.PlasmonResults = (() => {
     latestResult = result;
     latestDownloadMetadata = buildDownloadMetadata(result);
     const entries = window.PlasmonHistoryStore.add(result, latestDownloadMetadata);
-    renderResult(result, { preserveDownloadMetadata: true });
+    renderResult(result, { preserveDownloadMetadata: true, resetZoom: true });
     renderHistory(entries);
   }
 
@@ -377,6 +428,7 @@ window.PlasmonResults = (() => {
       timestamp,
       particleCount: entry.particle_count,
       mode: t(modeKey),
+      stepNm: entry.input?.spectrum?.step_nm ?? t("result.missing"),
       qcm: entry.qcm_applied ? t("history.qcmOn") : t("history.qcmOff"),
       quadrupole: entry.experimental_quadrupole_coupling
         ? t("history.quadrupoleOn")
@@ -682,7 +734,7 @@ window.PlasmonResults = (() => {
         entries,
         controls.quantity,
         controls.normalization,
-        { useSmoothed: smoothingEnabled() },
+        { useSmoothed: smoothingLevel() !== "off" },
       );
     } catch (error) {
       showComparisonError(error);
@@ -698,8 +750,7 @@ window.PlasmonResults = (() => {
       mode: "lines",
       line: { color: colours[index % colours.length], width: 2 },
     }));
-    window.Plotly.newPlot(
-      "spectrum-plot",
+    plotSpectrum(
       traces,
       {
         margin: { t: 24, r: 20, b: 58, l: 72 },
@@ -710,6 +761,7 @@ window.PlasmonResults = (() => {
         plot_bgcolor: "#ffffff",
       },
       { responsive: true, displaylogo: false },
+      { preferReact: true },
     );
   }
 
@@ -728,13 +780,39 @@ window.PlasmonResults = (() => {
   function initialize() {
     document.getElementById("download-csv").addEventListener("click", downloadCsv);
     document.getElementById("download-json").addEventListener("click", downloadJson);
-    document.getElementById("smoothing-toggle").addEventListener("change", () => {
+    const modernSmoothingControl = document.getElementById("result-smoothing");
+    const legacySmoothingControl = document.getElementById("smoothing-toggle");
+    const simulationForm = document.getElementById("simulation-form");
+    if (simulationForm) {
+      simulationForm.addEventListener(
+        "submit",
+        () => {
+          if (modernSmoothingControl && legacySmoothingControl) {
+            modernSmoothingControl.value = legacySmoothingControl.value;
+          }
+        },
+        true,
+      );
+    }
+    modernSmoothingControl?.addEventListener("change", () => {
+      syncLegacySmoothingControl(modernSmoothingControl.value);
       if (comparisonActive && selectedHistoryIds.size >= 2) {
         compareSelectedHistory();
       } else if (latestResult) {
         renderResult(latestResult, { preserveDownloadMetadata: true });
       }
     });
+    legacySmoothingControl?.addEventListener("change", () => {
+      if (modernSmoothingControl) {
+        modernSmoothingControl.value = legacySmoothingControl.value;
+      }
+      if (comparisonActive && selectedHistoryIds.size >= 2) {
+        compareSelectedHistory();
+      } else if (latestResult) {
+        renderResult(latestResult, { preserveDownloadMetadata: true });
+      }
+    });
+    syncLegacySmoothingControl(smoothingLevel());
     document.getElementById("history-compare").addEventListener("click", compareSelectedHistory);
     document.getElementById("history-select-all").addEventListener("click", selectAllHistory);
     document.getElementById("history-deselect-all").addEventListener("click", deselectAllHistory);
@@ -751,6 +829,9 @@ window.PlasmonResults = (() => {
       .addEventListener("change", refreshActiveComparison);
     document.getElementById("history-download-all").addEventListener("click", downloadAllHistory);
     document.getElementById("history-clear").addEventListener("click", () => {
+      if (!window.confirm(t("history.clearConfirm"))) {
+        return;
+      }
       window.PlasmonHistoryStore.clear();
       selectedHistoryIds = new Set();
       comparisonActive = false;
