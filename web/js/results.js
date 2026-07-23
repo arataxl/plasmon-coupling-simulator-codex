@@ -296,6 +296,20 @@ window.PlasmonResults = (() => {
     window.Plotly.newPlot("spectrum-plot", traces, layout, config);
   }
 
+  function preservedAxisRanges() {
+    const plotDiv = document.getElementById("spectrum-plot");
+    const xRange = plotDiv?.layout?.xaxis?.range;
+    const yRange = plotDiv?.layout?.yaxis?.range;
+    const layout = {};
+    if (Array.isArray(xRange)) {
+      layout.xaxis = { range: [...xRange] };
+    }
+    if (Array.isArray(yRange)) {
+      layout.yaxis = { range: [...yRange] };
+    }
+    return layout;
+  }
+
   function renderResult(result, { preserveDownloadMetadata = false, resetZoom = false } = {}) {
     comparisonActive = false;
     clearComparisonError();
@@ -336,7 +350,17 @@ window.PlasmonResults = (() => {
       legend: { orientation: "h", y: 1.12 },
       paper_bgcolor: "#ffffff",
       plot_bgcolor: "#ffffff",
+      uirevision: "spectrum-plot",
     };
+    if (!resetZoom) {
+      const axisRanges = preservedAxisRanges();
+      if (axisRanges.xaxis) {
+        layout.xaxis = { ...layout.xaxis, ...axisRanges.xaxis };
+      }
+      if (axisRanges.yaxis) {
+        layout.yaxis = { ...layout.yaxis, ...axisRanges.yaxis };
+      }
+    }
     const config = { responsive: true, displaylogo: false };
     plotSpectrum(traces, layout, config, { preferReact: !resetZoom });
 
@@ -759,6 +783,7 @@ window.PlasmonResults = (() => {
         legend: { orientation: "h", y: 1.12 },
         paper_bgcolor: "#ffffff",
         plot_bgcolor: "#ffffff",
+        uirevision: "spectrum-plot",
       },
       { responsive: true, displaylogo: false },
       { preferReact: true },
