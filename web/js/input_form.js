@@ -696,6 +696,10 @@ window.PlasmonInputForm = (() => {
         end_wavelength_nm: endWavelengthNm,
         step_nm: stepNm,
       },
+      smoothing_level: (() => {
+        const level = document.getElementById("smoothing-toggle").value;
+        return level === "off" ? null : level;
+      })(),
     };
     if (simulationMode !== exactMieMode) {
       payload.experimental_quadrupole_coupling = document.getElementById(

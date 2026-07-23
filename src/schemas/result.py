@@ -200,3 +200,4 @@ class SimulationResult(BaseModel):
     experimental_quadrupole_metadata: ExperimentalQuadrupoleMetadata
     provenance: ResultProvenance
     warnings: list[ResultWarning]
+    smoothing_level: Literal["low", "medium", "high", "very_high", "extreme"]

@@ -11,6 +11,14 @@
    - Johnson, P. B.; Christy, R. W.
      Optical Constants of the Noble Metals.
      Physical Review B 6, 4370–4379 (1972).
+   - McPeak, K. M.; Jayanti, S. V.; Kress, S. J. P.; Meyer, S.; Iotti, S.;
+     Rossinelli, A.; Norris, D. J.
+     Plasmonic Films Can Easily Be Better: Rules and Recipes.
+     ACS Photonics 2, 326–333 (2015).
+     DOI: 10.1021/ph5004237
+     既定のAu光学定数データセット。RefractiveIndex.INFO のMcPeak表を
+     300–1700 nmへ換算して同梱する。薄膜/バルク光学定数であり、ナノ球の
+     表面散乱・粒径減衰・結晶性・配位子効果を含むデータではない。
    - 用途：Auのバルク複素屈折率 n, k
    - 注意：ナノ粒子そのものではなく、バルク由来の光学定数である
 

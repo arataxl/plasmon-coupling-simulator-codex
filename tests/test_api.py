@@ -170,6 +170,18 @@ def test_simulate_exposes_raw_and_smoothed_spectra_consistently() -> None:
     assert spectrum["q_ext"] == pytest.approx(
         [value / spectrum["geometric_cross_section_m2"] for value in np_ext]
     )
+    assert response["smoothing_level"] == "medium"
+
+
+def test_simulate_accepts_a_selected_smoothing_level() -> None:
+    payload = _simulation_payload()
+    payload["smoothing_level"] = "high"
+
+    status_code, response = _post_json("/simulate", payload)
+
+    assert status_code == 200
+    assert response["input"]["smoothing_level"] == "high"
+    assert response["smoothing_level"] == "high"
 
 
 def test_simulate_supports_the_single_particle_exact_mie_mode() -> None:
@@ -302,8 +314,8 @@ def test_simulate_returns_explicit_error_when_qcm_metadata_is_unavailable(
 def test_synchronous_endpoint_retains_the_301_point_limit() -> None:
     payload = _simulation_payload()
     payload["spectrum"] = {
-        "start_wavelength_nm": 200.0,
-        "end_wavelength_nm": 1500.0,
+        "start_wavelength_nm": 300.0,
+        "end_wavelength_nm": 1700.0,
         "step_nm": 4.0,
     }
 
@@ -313,7 +325,7 @@ def test_synchronous_endpoint_retains_the_301_point_limit() -> None:
     assert response["error"]["code"] == "simulation_failed"
     assert response["error"]["parameters"] == {
         "maximum_points": 301,
-        "requested_points": 326,
+        "requested_points": 351,
     }
 
 

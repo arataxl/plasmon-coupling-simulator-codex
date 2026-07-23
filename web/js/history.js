@@ -28,6 +28,7 @@ window.PlasmonHistoryStore = (() => {
       calculation_mode: result.input.simulation_mode ?? "cda",
       particle_count: particleCount,
       qcm_applied: Boolean(result.qcm_metadata?.qcm_applied),
+      smoothing_level: result.smoothing_level,
       experimental_quadrupole_coupling: Boolean(
         result.experimental_quadrupole_metadata?.applied,
       ),
@@ -64,6 +65,7 @@ window.PlasmonHistoryStore = (() => {
       `# particle_count=${metadata.particle_count}`,
       `# calculation_mode=${metadata.calculation_mode ?? "cda"}`,
       `# qcm_applied=${metadata.qcm_applied}`,
+      `# smoothing_level=${metadata.smoothing_level}`,
       `# experimental_quadrupole_coupling=${metadata.experimental_quadrupole_coupling}`,
     ];
   }
@@ -98,7 +100,7 @@ window.PlasmonHistoryStore = (() => {
 
   function csvForEntries(entries) {
     const rows = [
-      "history_id,result_timestamp_utc,calculation_mode,particle_count,minimum_surface_gap_nm,placement_fingerprint,qcm_applied,experimental_quadrupole_coupling,wavelength_nm,c_ext_m2,c_sca_m2,c_abs_m2,q_ext,q_sca,q_abs,geometric_cross_section_m2",
+      "history_id,result_timestamp_utc,calculation_mode,particle_count,minimum_surface_gap_nm,placement_fingerprint,qcm_applied,smoothing_level,experimental_quadrupole_coupling,wavelength_nm,c_ext_m2,c_sca_m2,c_abs_m2,q_ext,q_sca,q_abs,geometric_cross_section_m2",
     ];
     entries.forEach((entry) => {
       const metadata = entry.download_metadata;
@@ -112,6 +114,7 @@ window.PlasmonHistoryStore = (() => {
             metadata.minimum_surface_gap_nm ?? "not_applicable",
             metadata.placement.fingerprint,
             entry.qcm_applied,
+            entry.smoothing_level,
             entry.experimental_quadrupole_coupling,
             wavelengthNm,
             entry.spectrum.c_ext_m2[index],

@@ -6,7 +6,7 @@ English version: [README.md](README.md)
 量子補正モデル（QCM）で条件探索するための、研究者・学生向けローカルWebアプリです。
 実験データの定量再現器や、BEM/DDA/FDTD/TDDFTの代替を目的にはしません。
 
-> 状態：Phase 5まで実装済みです。Johnson and Christy材料データ、単一球の完全Mie参照計算、
+> 状態：Phase 5まで実装済みです。McPeak et al. (2015) を既定とする材料データ、単一球の完全Mie参照計算、
 > FCDA分極率、遅延 Green tensor、CDA中核、入力スキーマ、Validation Test 1〜3・5の
 > 基礎試験に加え、Fig. 2d由来の暫定 `gamma_g` 表、局所誘電率、4層のCDA縮約、Test 4の
 > 物理コア試験を実装済みです。同期 `POST /simulate` に加え、SSE進捗・協調的取消、
@@ -26,7 +26,7 @@ English version: [README.md](README.md)
 ## 物理的な適用範囲と警告
 
 内部計算はSI単位系で行い、UI/API/CSV/JSONの境界でnm等を変換します。MVPではAuの完全な球、
-直径2〜100 nm、均一・等方・非吸収性媒質、波長200〜1500 nmを対象とします。
+直径2〜100 nm、均一・等方・非吸収性媒質、波長300〜1700 nmを対象とします。
 
 | 条件 | 動作 | 結果の扱い |
 | --- | --- | --- |
@@ -44,7 +44,7 @@ Kreibig型サイズ補正は物理コアの検証用フックとしてのみ残�
 有効化できません。Esteban et al. (2012) にあるAu jellium・大波長域向けのDrude値は、
 Johnson and Christy (1972) の実測バルク `n + ik` を基にするKreibig補正には転用しません。
 一次資料との整合を確認して専用の受入試験を追加するまで、利用者向け機能として延期します。
-Au光学定数はJohnson and Christy (1972)を用い、データ範囲外へ原則として外挿しません。
+Au光学定数の既定は McPeak et al. (2015) の薄膜/バルクデータ（300–1700 nm、約5 nm刻み）とし、データ範囲外へは原則として外挿しません。Johnson and Christy (1972) のCSVは比較・既存Mie基準値の再現用として保持します。いずれもナノ球実験の校正値ではありません。
 
 QCMの物理的根拠、暫定表の抽出方法、4層化の収束確認、限界は
 [docs/quantum_corrected_model_integration.md](docs/quantum_corrected_model_integration.md) を正とします。

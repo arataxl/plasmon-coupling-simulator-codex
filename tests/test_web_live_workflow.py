@@ -299,7 +299,7 @@ def test_real_page_keeps_japanese_default_and_renders_history_after_sse(
             (() => {
               document.getElementById('apply-dimer').click();
               document.getElementById('start-wavelength-nm').value = '400';
-              document.getElementById('end-wavelength-nm').value = '520';
+              document.getElementById('end-wavelength-nm').value = '600';
               document.getElementById('wavelength-step-nm').value = '10';
             })()
             """
@@ -319,21 +319,43 @@ def test_real_page_keeps_japanese_default_and_renders_history_after_sse(
         )
         assert client.evaluate(
             "!document.getElementById('result-smoothing-control').hidden && "
-            "document.getElementById('result-smoothing').checked"
+            "document.getElementById('smoothing-toggle').value === 'medium'"
         ) is True
         assert client.evaluate(
             "JSON.parse(localStorage.getItem('plasmon-coupling-simulator.history.v1'))[0].spectrum."
             "raw_c_ext_m2.some((value, index, raw) => value !== "
             "JSON.parse(localStorage.getItem('plasmon-coupling-simulator.history.v1'))[0].spectrum.c_ext_m2[index])"
         ) is True
-        client.evaluate("document.getElementById('experimental-quadrupole-coupling').click()")
+        assert client.evaluate(
+            "JSON.parse(localStorage.getItem('plasmon-coupling-simulator.history.v1'))[0].smoothing_level === 'medium'"
+        ) is True
+        medium_result_values = client.evaluate(
+            "JSON.stringify(document.getElementById('spectrum-plot').data.map((trace) => trace.y))"
+        )
+        client.evaluate("document.getElementById('smoothing-toggle').value = 'high'")
         client.evaluate("document.getElementById('simulation-form').requestSubmit()")
         _wait_until(
             lambda: client.evaluate(
                 "document.querySelectorAll('#history-list .history-entry').length === 2"
             ),
             timeout_seconds=30,
-            description="the second SSE-completed history entry",
+            description="the high-smoothing SSE-completed history entry",
+        )
+        high_result_values = client.evaluate(
+            "JSON.stringify(document.getElementById('spectrum-plot').data.map((trace) => trace.y))"
+        )
+        assert high_result_values != medium_result_values
+        assert client.evaluate(
+            "JSON.parse(localStorage.getItem('plasmon-coupling-simulator.history.v1')).map((entry) => entry.smoothing_level).join(',') === 'high,medium'"
+        ) is True
+        client.evaluate("document.getElementById('experimental-quadrupole-coupling').click()")
+        client.evaluate("document.getElementById('simulation-form').requestSubmit()")
+        _wait_until(
+            lambda: client.evaluate(
+                "document.querySelectorAll('#history-list .history-entry').length === 3"
+            ),
+            timeout_seconds=30,
+            description="the quadrupole-enabled SSE-completed history entry",
         )
         labels = client.evaluate(
             "[...document.querySelectorAll('.history-entry-label')].map((item) => item.textContent)"
@@ -344,16 +366,16 @@ def test_real_page_keeps_japanese_default_and_renders_history_after_sse(
             "JSON.stringify(document.getElementById('spectrum-plot').data.map((trace) => trace.y))"
         )
         client.evaluate(
-            "(() => { const control = document.getElementById('result-smoothing'); "
-            "control.checked = false; control.dispatchEvent(new Event('change')); })()"
+            "(() => { const control = document.getElementById('smoothing-toggle'); "
+            "control.value = 'off'; control.dispatchEvent(new Event('change')); })()"
         )
         raw_result_values = client.evaluate(
             "JSON.stringify(document.getElementById('spectrum-plot').data.map((trace) => trace.y))"
         )
         assert raw_result_values != smoothed_result_values
         client.evaluate(
-            "(() => { const control = document.getElementById('result-smoothing'); "
-            "control.checked = true; control.dispatchEvent(new Event('change')); })()"
+            "(() => { const control = document.getElementById('smoothing-toggle'); "
+            "control.value = 'high'; control.dispatchEvent(new Event('change')); })()"
         )
         client.evaluate("document.querySelector('.history-detail-button').click()")
         assert client.evaluate("document.getElementById('history-detail-dialog').open") is True
@@ -373,8 +395,8 @@ def test_real_page_keeps_japanese_default_and_renders_history_after_sse(
         client.evaluate(
             """
             (() => {
-              const smoothing = document.getElementById('result-smoothing');
-              smoothing.checked = false;
+              const smoothing = document.getElementById('smoothing-toggle');
+              smoothing.value = 'off';
               smoothing.dispatchEvent(new Event('change'));
               document.getElementById('history-compare').click();
             })()
@@ -383,7 +405,7 @@ def test_real_page_keeps_japanese_default_and_renders_history_after_sse(
         _wait_until(
             lambda: client.evaluate(
                 "Boolean(document.getElementById('spectrum-plot').data && "
-                "document.getElementById('spectrum-plot').data.length === 2)"
+                "document.getElementById('spectrum-plot').data.length === 3)"
             ),
             timeout_seconds=15,
             description="the raw-spectrum comparison",
@@ -392,8 +414,8 @@ def test_real_page_keeps_japanese_default_and_renders_history_after_sse(
             "JSON.stringify(document.getElementById('spectrum-plot').data.map((trace) => trace.y))"
         )
         client.evaluate(
-            "(() => { const smoothing = document.getElementById('result-smoothing'); "
-            "smoothing.checked = true; smoothing.dispatchEvent(new Event('change')); })()"
+            "(() => { const smoothing = document.getElementById('smoothing-toggle'); "
+            "smoothing.value = 'high'; smoothing.dispatchEvent(new Event('change')); })()"
         )
         smoothed_comparison_values = client.evaluate(
             "JSON.stringify(document.getElementById('spectrum-plot').data.map((trace) => trace.y))"
@@ -415,7 +437,7 @@ def test_real_page_keeps_japanese_default_and_renders_history_after_sse(
         _wait_until(
             lambda: client.evaluate(
                 "Boolean(document.getElementById('spectrum-plot').data && "
-                "document.getElementById('spectrum-plot').data.length === 2)"
+                "document.getElementById('spectrum-plot').data.length === 3)"
             ),
             timeout_seconds=15,
             description="the Csca peak-normalized comparison",

@@ -16,11 +16,12 @@ EXPANDED_CLASSICAL_CDA_MIN_GAP_NM = 5.0
 EXACT_MIE_MIN_DIAMETER_NM = 2.0
 EXACT_MIE_MAX_DIAMETER_NM = 500.0
 MIN_SURFACE_GAP_NM = 0.5
-MIN_WAVELENGTH_NM = 200.0
-MAX_WAVELENGTH_NM = 1500.0
+MIN_WAVELENGTH_NM = 300.0
+MAX_WAVELENGTH_NM = 1700.0
 MAX_SYNCHRONOUS_SPECTRUM_POINTS = 301
 MAX_STREAM_SPECTRUM_POINTS = 5_000
 _GAP_COMPARISON_ABS_TOLERANCE_NM = 1e-12
+SmoothingLevel = Literal["low", "medium", "high", "very_high", "extreme"]
 
 
 def _require_finite(value: float, *, field_name: str) -> float:
@@ -221,6 +222,7 @@ class SimulationInput(BaseModel):
     medium: MediumInput
     light_source: LightSourceInput
     spectrum: SpectrumRangeInput = Field(default_factory=SpectrumRangeInput)
+    smoothing_level: SmoothingLevel | None = None
     experimental_quadrupole_coupling: bool = False
 
     @model_validator(mode="after")
@@ -278,6 +280,7 @@ class ExactMieSimulationInput(BaseModel):
     medium: MediumInput
     light_source: LightSourceInput
     spectrum: SpectrumRangeInput = Field(default_factory=SpectrumRangeInput)
+    smoothing_level: SmoothingLevel | None = None
 
 
 SimulationRequest = SimulationInput | ExactMieSimulationInput

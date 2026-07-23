@@ -148,6 +148,7 @@ window.PlasmonResults = (() => {
         step: spectrum.step_nm,
       },
       qcm_applied: qcmApplied,
+      smoothing_level: result.smoothing_level,
       experimental_quadrupole_coupling: experimentalQuadrupoleApplied,
       experimental_quadrupole_metadata: result.experimental_quadrupole_metadata ?? null,
       result_timestamp_utc: timestampUtc,
@@ -225,8 +226,8 @@ window.PlasmonResults = (() => {
   }
 
   function smoothingEnabled() {
-    const control = document.getElementById("result-smoothing");
-    return control ? control.checked : true;
+    const control = document.getElementById("smoothing-toggle");
+    return !control || control.value !== "off";
   }
 
   function spectrumForDisplay(spectrum) {
@@ -315,6 +316,7 @@ window.PlasmonResults = (() => {
       `# minimum_surface_gap_nm=${metadata.minimum_surface_gap_nm ?? "not_applicable"}`,
       `# wavelength_range_nm=${metadata.wavelength_range_nm.start},${metadata.wavelength_range_nm.end},step=${metadata.wavelength_range_nm.step}`,
       `# qcm_applied=${metadata.qcm_applied}`,
+      `# smoothing_level=${metadata.smoothing_level}`,
       `# experimental_quadrupole_coupling=${metadata.experimental_quadrupole_coupling}`,
       `# experimental_quadrupole_model=${metadata.experimental_quadrupole_metadata?.model ?? "not_applied"}`,
     ];
@@ -726,7 +728,7 @@ window.PlasmonResults = (() => {
   function initialize() {
     document.getElementById("download-csv").addEventListener("click", downloadCsv);
     document.getElementById("download-json").addEventListener("click", downloadJson);
-    document.getElementById("result-smoothing").addEventListener("change", () => {
+    document.getElementById("smoothing-toggle").addEventListener("change", () => {
       if (comparisonActive && selectedHistoryIds.size >= 2) {
         compareSelectedHistory();
       } else if (latestResult) {

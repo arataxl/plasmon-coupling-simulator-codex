@@ -8,8 +8,14 @@ import numpy as np
 from scipy.signal import savgol_filter
 
 
-SMOOTHING_WINDOW_LENGTH = 5
-SMOOTHING_POLYORDER = 2
+SMOOTHING_LEVELS: dict[str, tuple[int, int]] = {
+    "low": (5, 2),
+    "medium": (9, 3),
+    "high": (15, 3),
+    "very_high": (21, 4),
+    "extreme": (31, 4),
+}
+SMOOTHING_DEFAULT_LEVEL = "medium"
 
 
 @dataclass(frozen=True)
@@ -22,6 +28,7 @@ class SmoothedCrossSections:
     c_ext_m2: np.ndarray
     c_sca_m2: np.ndarray
     c_abs_m2: np.ndarray
+    smoothing_level: str
 
 
 def smooth_spectrum_cross_sections(
@@ -29,6 +36,7 @@ def smooth_spectrum_cross_sections(
     c_ext_m2: np.ndarray,
     c_sca_m2: np.ndarray,
     c_abs_m2: np.ndarray,
+    level: str = SMOOTHING_DEFAULT_LEVEL,
 ) -> SmoothedCrossSections:
     """表示用に Cext/Csca を Savitzky--Golay 平滑化する。
 
@@ -38,6 +46,9 @@ def smooth_spectrum_cross_sections(
     せず、常に返却する Cext - Csca から再計算してエネルギー収支を
     保つ。
     """
+    if level not in SMOOTHING_LEVELS:
+        raise ValueError(f"unknown smoothing level: {level}")
+    window_length, polyorder = SMOOTHING_LEVELS[level]
     raw_c_ext = np.asarray(c_ext_m2, dtype=np.float64).copy()
     raw_c_sca = np.asarray(c_sca_m2, dtype=np.float64).copy()
     raw_c_abs = np.asarray(c_abs_m2, dtype=np.float64).copy()
@@ -45,20 +56,20 @@ def smooth_spectrum_cross_sections(
     if len(lengths) != 1 or raw_c_ext.ndim != raw_c_sca.ndim or raw_c_ext.ndim != raw_c_abs.ndim:
         raise ValueError("cross-section arrays must be one-dimensional and have matching lengths")
 
-    if raw_c_ext.size < SMOOTHING_WINDOW_LENGTH:
+    if raw_c_ext.size < window_length:
         smoothed_c_ext = raw_c_ext.copy()
         smoothed_c_sca = raw_c_sca.copy()
         smoothed_c_abs = raw_c_abs.copy()
     else:
         smoothed_c_ext = savgol_filter(
             raw_c_ext,
-            window_length=SMOOTHING_WINDOW_LENGTH,
-            polyorder=SMOOTHING_POLYORDER,
+            window_length=window_length,
+            polyorder=polyorder,
         )
         smoothed_c_sca = savgol_filter(
             raw_c_sca,
-            window_length=SMOOTHING_WINDOW_LENGTH,
-            polyorder=SMOOTHING_POLYORDER,
+            window_length=window_length,
+            polyorder=polyorder,
         )
         smoothed_c_abs = np.asarray(
             smoothed_c_ext - smoothed_c_sca,
@@ -72,4 +83,5 @@ def smooth_spectrum_cross_sections(
         c_ext_m2=np.asarray(smoothed_c_ext, dtype=np.float64),
         c_sca_m2=np.asarray(smoothed_c_sca, dtype=np.float64),
         c_abs_m2=np.asarray(smoothed_c_abs, dtype=np.float64),
+        smoothing_level=level,
     )

@@ -1,4 +1,4 @@
-"""Johnson and Christy (1972) のAu光学定数を扱う。"""
+"""McPeak et al. (2015) を既定とするAu光学定数を扱う。"""
 
 from __future__ import annotations
 
@@ -81,15 +81,16 @@ class OpticalConstants:
 
 
 def default_au_optical_constants_path() -> Path:
-    """リポジトリ同梱のJohnson and Christy CSVへのパスを返す。"""
+    """リポジトリ同梱のMcPeak et al. (2015) CSVへのパスを返す。"""
     repository_root = Path(__file__).resolve().parents[2]
-    return repository_root / "data" / "optical_constants" / "au_johnson_christy_1972.csv"
+    return repository_root / "data" / "optical_constants" / "au_mcpeak_2015.csv"
 
 
 def load_au_optical_constants(path: Path | None = None) -> OpticalConstants:
-    """Johnson and Christy (1972) のAu CSVを読み込む。
+    """McPeak et al. (2015) を既定とするAu CSVを読み込む。
 
-    必須列は ``wavelength_nm,n,k`` であり、波長は有限値かつ昇順でなければならない。
+    明示した ``path`` によりJohnson and Christy (1972) を含む同形式の
+    CSVも読み込める。必須列は ``wavelength_nm,n,k`` であり、波長は有限値かつ昇順でなければならない。
     """
     source_path = (path or default_au_optical_constants_path()).resolve()
     if not source_path.is_file():
@@ -98,7 +99,7 @@ def load_au_optical_constants(path: Path | None = None) -> OpticalConstants:
     wavelengths: list[float] = []
     n_values: list[float] = []
     k_values: list[float] = []
-    with source_path.open("r", encoding="utf-8", newline="") as csv_file:
+    with source_path.open("r", encoding="utf-8-sig", newline="") as csv_file:
         reader = csv.DictReader(csv_file)
         required_columns = {"wavelength_nm", "n", "k"}
         if reader.fieldnames is None or not required_columns.issubset(reader.fieldnames):

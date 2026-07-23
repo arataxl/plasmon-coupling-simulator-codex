@@ -196,11 +196,11 @@
               <div class="input-grid">
                 <label>
                   <span data-i18n="optics.startWavelength">開始波長 (nm)</span>
-                  <input id="start-wavelength-nm" type="number" min="200" max="1500" step="1" value="450" required />
+                  <input id="start-wavelength-nm" type="number" min="300" max="1700" step="1" value="450" required />
                 </label>
                 <label>
                   <span data-i18n="optics.endWavelength">終了波長 (nm)</span>
-                  <input id="end-wavelength-nm" type="number" min="200" max="1500" step="1" value="850" required />
+                  <input id="end-wavelength-nm" type="number" min="300" max="1700" step="1" value="850" required />
                 </label>
                 <label>
                   <span data-i18n="optics.step">刻み (nm)</span>
@@ -300,8 +300,15 @@
             </details>
             <ul id="warning-list" class="warning-list" aria-live="polite"></ul>
             <label id="result-smoothing-control" class="result-smoothing-control" hidden>
-              <input id="result-smoothing" type="checkbox" checked />
-              <span data-i18n="result.smoothing">スムージング（Savitzky-Golay）</span>
+              <span data-i18n="result.smoothingLabel">スムージング（Savitzky-Golay）</span>
+              <select id="smoothing-toggle">
+                <option value="off" data-i18n="result.smoothingOff">オフ</option>
+                <option value="low" data-i18n="result.smoothingLow">弱（約20 nm）</option>
+                <option value="medium" selected data-i18n="result.smoothingMedium">中（約40 nm）</option>
+                <option value="high" data-i18n="result.smoothingHigh">強（約70 nm）</option>
+                <option value="very_high" data-i18n="result.smoothingVeryHigh">非常に強（約100 nm）</option>
+                <option value="extreme" data-i18n="result.smoothingExtreme">極強（約150 nm）</option>
+              </select>
             </label>
             <div id="spectrum-plot" class="spectrum-plot" data-i18n-aria-label="result.spectrumAria" aria-label="CDAスペクトルのグラフ"></div>
             <section class="history-panel" aria-labelledby="history-title">

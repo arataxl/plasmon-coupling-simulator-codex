@@ -109,7 +109,7 @@ def test_completed_results_render_history_and_localized_legend_in_the_browser_do
   <button data-language="ja">日本語</button><button data-language="en">English</button>
   <span id="translated-cross-section" data-i18n="result.cExt">Cext</span>
   <button id="download-csv"></button><button id="download-json"></button>
-  <label id="result-smoothing-control" hidden><input id="result-smoothing" type="checkbox" checked /></label>
+  <label id="result-smoothing-control" hidden><select id="smoothing-toggle"><option value="off">off</option><option value="medium" selected>medium</option></select></label>
   <button id="history-compare"></button><button id="history-select-all"></button>
   <button id="history-deselect-all"></button><button id="history-download-all"></button>
   <button id="history-clear"></button><div id="history-list"></div>

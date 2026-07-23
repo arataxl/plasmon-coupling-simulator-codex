@@ -43,7 +43,10 @@ from src.schemas.simulation import (
     SimulationRequest,
     SpectrumRangeInput,
 )
-from src.services.spectrum_smoothing import smooth_spectrum_cross_sections
+from src.services.spectrum_smoothing import (
+    SMOOTHING_DEFAULT_LEVEL,
+    smooth_spectrum_cross_sections,
+)
 
 
 QCM_PARAMETER_SOURCE = "Esteban et al. (2012), DOI: 10.1038/ncomms1806"
@@ -77,7 +80,7 @@ EXPERIMENTAL_QUADRUPOLE_INTENDED_USE = (
     "Qualitative near-infrared trend exploration only; not quantitative validation."
 )
 EXACT_SINGLE_SPHERE_MIE_MODEL_NAME = "Exact single-sphere Mie theory (all orders)"
-MATERIAL_DATA_SOURCE = "Johnson and Christy (1972) Au n + ik dataset"
+MATERIAL_DATA_SOURCE = "McPeak et al. (2015) Au n + ik dataset"
 MATERIAL_DATA_INTERPOLATION = "linear interpolation of n and k; no extrapolation"
 SOFTWARE_VERSION = "0.2.0"
 MAX_SYNCHRONOUS_CDA_PARTICLES = MAX_QCM_CDA_PARTICLES
@@ -297,12 +300,14 @@ def _spectrum_result(
     c_sca_m2: np.ndarray,
     c_abs_m2: np.ndarray,
     geometric_cross_section_m2: float,
+    smoothing_level: str | None,
 ) -> SpectrumResult:
     """生データを残して、API 表示用後処理済みスペクトルを構成する。"""
     cross_sections = smooth_spectrum_cross_sections(
         c_ext_m2=c_ext_m2,
         c_sca_m2=c_sca_m2,
         c_abs_m2=c_abs_m2,
+        level=smoothing_level or SMOOTHING_DEFAULT_LEVEL,
     )
     return SpectrumResult(
         wavelength_nm=[float(value) for value in wavelength_nm],
@@ -373,6 +378,7 @@ def _build_simulation_result(
             c_sca_m2=c_sca_m2,
             c_abs_m2=c_abs_m2,
             geometric_cross_section_m2=geometric_cross_section_m2,
+            smoothing_level=simulation.smoothing_level,
         ),
         qcm_metadata=qcm_metadata,
         experimental_quadrupole_metadata=experimental_quadrupole_metadata,
@@ -390,6 +396,7 @@ def _build_simulation_result(
             ResultWarning(code=warning.code, parameters=warning.parameters)
             for warning in warnings
         ],
+        smoothing_level=simulation.smoothing_level or SMOOTHING_DEFAULT_LEVEL,
     )
 
 
@@ -423,6 +430,7 @@ def _build_exact_mie_result(
             c_sca_m2=spectrum.c_sca_m2,
             c_abs_m2=spectrum.c_abs_m2,
             geometric_cross_section_m2=geometric_cross_section_m2,
+            smoothing_level=simulation.smoothing_level,
         ),
         qcm_metadata=QcmResultMetadata(qcm_applied=False),
         experimental_quadrupole_metadata=ExperimentalQuadrupoleMetadata(applied=False),
@@ -433,6 +441,7 @@ def _build_exact_mie_result(
             software_version=SOFTWARE_VERSION,
         ),
         warnings=[],
+        smoothing_level=simulation.smoothing_level or SMOOTHING_DEFAULT_LEVEL,
     )
 
 

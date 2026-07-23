@@ -49,6 +49,7 @@ def test_history_records_required_provenance_and_compares_selected_spectra() -> 
         "calculation_mode",
         "particle_count",
         "qcm_applied",
+        "smoothing_level",
         "experimental_quadrupole_coupling",
         "input: result.input",
         "spectrum: result.spectrum",

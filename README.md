@@ -19,7 +19,9 @@ The detailed MVP boundary and acceptance criteria are in [docs/SPEC.md](docs/SPE
 
 ## Physical scope and limitations
 
-All core calculations use SI units. The UI, API, and CSV/JSON boundaries convert to and from nm where needed. The supported MVP model is limited to spherical Au particles with diameters from 2 to 100 nm in a homogeneous, isotropic, non-absorbing medium, over an initial wavelength range of 200–1500 nm.
+By default, Au optical constants are taken from the McPeak et al. (2015) thin-film/bulk dataset bundled at 300–1700 nm and are linearly interpolated without extrapolation. The retained Johnson and Christy (1972) CSV is used for comparison and for reproducing the existing Mie-reference baseline; neither dataset is a calibrated nanosphere measurement.
+
+All core calculations use SI units. The UI, API, and CSV/JSON boundaries convert to and from nm where needed. The supported MVP model is limited to spherical Au particles with diameters from 2 to 100 nm in a homogeneous, isotropic, non-absorbing medium, over a wavelength range of 300–1700 nm.
 
 | Condition | Application behaviour | Interpretation |
 | --- | --- | --- |
