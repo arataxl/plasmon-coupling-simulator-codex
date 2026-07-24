@@ -6,7 +6,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from src.schemas.simulation import SimulationRequest
+from src.schemas.simulation import SimulationInput
 
 
 class QcmResultMetadata(BaseModel):
@@ -65,44 +65,6 @@ class QcmResultMetadata(BaseModel):
         return self
 
 
-class ExperimentalQuadrupoleMetadata(BaseModel):
-    """Provenance for the opt-in, incomplete ED--EQ experimental extension."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    applied: bool
-    model: str | None = None
-    source: str | None = None
-    included_terms: str | None = None
-    omitted_terms: str | None = None
-    energy_conservation_note: str | None = None
-    intended_use: str | None = None
-
-    @model_validator(mode="after")
-    def require_limitations_when_applied(self) -> Self:
-        if not self.applied:
-            return self
-        required_fields = (
-            "model",
-            "source",
-            "included_terms",
-            "omitted_terms",
-            "energy_conservation_note",
-            "intended_use",
-        )
-        missing_fields = [
-            field_name
-            for field_name in required_fields
-            if getattr(self, field_name) is None
-        ]
-        if missing_fields:
-            raise ValueError(
-                "experimental quadrupole results require metadata fields: "
-                + ", ".join(missing_fields)
-            )
-        return self
-
-
 class CrossSectionsResult(BaseModel):
     """基準波長におけるCDA断面積と効率。断面積の単位はm^2。"""
 
@@ -131,9 +93,6 @@ class SpectrumResult(BaseModel):
     q_sca: list[float]
     q_abs: list[float]
     geometric_cross_section_m2: float = Field(gt=0)
-    raw_c_ext_m2: list[float] | None = None
-    raw_c_sca_m2: list[float] | None = None
-    raw_c_abs_m2: list[float] | None = None
 
     @model_validator(mode="after")
     def validate_matching_lengths(self) -> Self:
@@ -148,12 +107,6 @@ class SpectrumResult(BaseModel):
         }
         if len(lengths) != 1 or not self.wavelength_nm:
             raise ValueError("spectrum arrays must be non-empty and have matching lengths")
-        raw_arrays = (self.raw_c_ext_m2, self.raw_c_sca_m2, self.raw_c_abs_m2)
-        if any(values is not None for values in raw_arrays):
-            if any(values is None for values in raw_arrays):
-                raise ValueError("raw spectrum arrays must be provided together")
-            if any(len(values) != len(self.wavelength_nm) for values in raw_arrays):
-                raise ValueError("raw spectrum arrays must match wavelength array length")
         return self
 
 
@@ -180,7 +133,6 @@ class ResultWarning(BaseModel):
 
     code: Literal[
         "cda_gap_limitation",
-        "experimental_quadrupole_coupling",
         "qcm_applied",
         "qcm_classical_limit",
         "qcm_validation_override",
@@ -193,11 +145,9 @@ class SimulationResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    input: SimulationRequest
+    input: SimulationInput
     cross_sections: CrossSectionsResult
     spectrum: SpectrumResult
     qcm_metadata: QcmResultMetadata
-    experimental_quadrupole_metadata: ExperimentalQuadrupoleMetadata
     provenance: ResultProvenance
     warnings: list[ResultWarning]
-    smoothing_level: Literal["low", "medium", "high", "very_high", "extreme"]

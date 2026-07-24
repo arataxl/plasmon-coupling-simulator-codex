@@ -23,37 +23,3 @@ caution: >
   結晶性、配位子層は反映していない。
   5 nm 級粒子では表面散乱補正（size-corrected damping）を別途検討すること。
 interpolation: linear
-
-mcpeak_2015:
-  interpolation: linear
-  caution_en: >
-    This is bulk thin-film optical data. It does not include nanosphere surface
-    scattering, particle-size damping, crystallinity, or ligand effects. For
-    particles at or below 5 nm, consider a source-backed size-corrected damping
-    model. The approximately 5 nm data spacing can give a smoother SPR response
-    than the Johnson and Christy (1972) table; it is not experimental nanosphere
-    calibration.
-  material: Au
-  source:
-    authors: "McPeak, K. M.; Jayanti, S. V.; Kress, S. J. P.; Meyer, S.; Iotti, S.; Rossinelli, A.; Norris, D. J."
-    title: "Plasmonic Films Can Easily Be Better: Rules and Recipes"
-    journal: "ACS Photonics"
-    volume: 2
-    pages: "326-333"
-    year: 2015
-    doi: "10.1021/ph5004237"
-  database: "RefractiveIndex.INFO"
-  database_url: "https://refractiveindex.info/?shelf=main&book=Au&page=McPeak"
-  csv_download_url: "https://refractiveindex.info/data_csv.php?datafile=database/data/main/Au/nk/McPeak.yml"
-  original_wavelength_unit: micrometer
-  converted_wavelength_unit: nanometer
-  wavelength_range_original_um: [0.3, 1.7]
-  wavelength_range_available_nm: [300, 1700]
-  wavelength_range_used_nm: [300, 1700]
-  data_type: bulk_thin_film
-  caution: >
-    バルク薄膜の光学定数であり、ナノ粒子の表面散乱、粒径依存減衰、結晶性、
-    配位子層は別途扱わない。5 nm以下の粒子では表面散乱補正（size-corrected damping）を
-    追加検討すること。McPeak 2015データはJohnson & Christy 1972より細かい5 nm刻みであり、
-    滑らかなSPR応答を再現する。
-  interpolation: linear

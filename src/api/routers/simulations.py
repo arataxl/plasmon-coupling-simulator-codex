@@ -19,7 +19,7 @@ from src.schemas.simulation import (
     DisplayLayoutInput,
     ParticleInput,
     RandomClusterLayoutInput,
-    SimulationRequest,
+    SimulationInput,
 )
 from src.services.job_manager import SimulationJobManager, SimulationJobNotFoundError
 from src.services.particle_layouts import (
@@ -52,7 +52,7 @@ JobManagerDependency = Annotated[SimulationJobManager, Depends(get_simulation_jo
 
 @router.post("/simulate", response_model=SimulationResult)
 def simulate(
-    simulation: SimulationRequest,
+    simulation: SimulationInput,
     optical_constants: OpticalConstantsDependency,
     qcm_parameter_table: QcmParameterTableDependency,
 ) -> SimulationResult:
@@ -66,7 +66,7 @@ def simulate(
 
 @router.post("/simulate/jobs", status_code=status.HTTP_202_ACCEPTED)
 def start_simulation_job(
-    simulation: SimulationRequest,
+    simulation: SimulationInput,
     optical_constants: OpticalConstantsDependency,
     qcm_parameter_table: QcmParameterTableDependency,
     job_manager: JobManagerDependency,

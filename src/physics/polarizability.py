@@ -78,119 +78,44 @@ class FcdaPolarizability:
     kreibig_correction_applied: bool
 
 
-@dataclass(frozen=True)
-class ElectricQuadrupolePolarizability:
-    """Electric quadrupole polarizability in the SI convention used by CDA.
-
-    The induced, symmetric traceless electric quadrupole tensor is defined by
-    ``Q = alpha_q sym(grad(E_local))``.  Therefore ``alpha_q`` has SI units
-    ``F m^4`` (equivalently ``C m^2 / (V m^-2)``).  With the ``exp(-i omega t)``
-    convention, the Mie-theory normalization is
-
-    ``alpha_q = 120 pi i epsilon_0 epsilon_m a_2 / k_m^5``.
-
-    This tensor convention and normalization follow Eq. (16) of Evlyukhin
-    et al., *Physical Review B* 85, 245411 (2012),
-    DOI: 10.1103/PhysRevB.85.245411.  It is exposed separately from the
-    default FCDA dipole model because it is only used by the explicitly
-    experimental dipole--quadrupole extension.
-    """
-
-    wavelength_m: float
-    wave_number_m_inv: float
-    particle_permittivity: complex
-    electric_quadrupole_mie_coefficient: complex
-    polarizability_si: complex
-    kreibig_correction_applied: bool
-
-
 def _require_finite_positive(value: float, *, name: str) -> float:
     if not math.isfinite(value) or value <= 0.0:
         raise ValueError(f"{name} must be finite and positive")
     return value
 
 
-def _riccati_psi(order: int, argument: complex) -> complex:
-    """Return the Riccati--Bessel function ``psi_l(z)`` for ``l >= 1``."""
-    return complex(argument * spherical_jn(order, argument))
+def _riccati_psi_one(argument: complex) -> complex:
+    """一階 Riccati--Bessel 関数 ``psi_1(z)`` を返す。"""
+    return complex(argument * spherical_jn(1, argument))
 
 
-def _riccati_psi_derivative(order: int, argument: complex) -> complex:
-    """Return the derivative of ``psi_l(z)`` with respect to ``z``."""
+def _riccati_psi_one_derivative(argument: complex) -> complex:
+    """``psi_1(z)`` の引数に関する微分を返す。"""
     return complex(
-        spherical_jn(order, argument)
-        + argument * spherical_jn(order, argument, derivative=True)
+        spherical_jn(1, argument)
+        + argument * spherical_jn(1, argument, derivative=True)
     )
 
 
-def _outgoing_riccati_hankel(order: int, argument: complex) -> complex:
-    """Return the outgoing ``xi_l`` for the ``exp(-i omega t)`` convention."""
+def _outgoing_riccati_hankel_one(argument: complex) -> complex:
+    """``exp(-i omega t)`` 規約の外向き ``xi_1(z)`` を返す。"""
     return complex(
-        argument * spherical_jn(order, argument)
-        + 1j * argument * spherical_yn(order, argument)
+        argument * spherical_jn(1, argument)
+        + 1j * argument * spherical_yn(1, argument)
     )
 
 
-def _outgoing_riccati_hankel_derivative(order: int, argument: complex) -> complex:
-    """Return the derivative of the outgoing Riccati--Hankel function."""
+def _outgoing_riccati_hankel_one_derivative(argument: complex) -> complex:
+    """外向き ``xi_1(z)`` の引数に関する微分を返す。"""
     return complex(
-        spherical_jn(order, argument)
-        + argument * spherical_jn(order, argument, derivative=True)
+        spherical_jn(1, argument)
+        + argument * spherical_jn(1, argument, derivative=True)
         + 1j
         * (
-            spherical_yn(order, argument)
-            + argument * spherical_yn(order, argument, derivative=True)
+            spherical_yn(1, argument)
+            + argument * spherical_yn(1, argument, derivative=True)
         )
     )
-
-
-def calculate_electric_mie_coefficient(
-    *,
-    multipole_order: int,
-    relative_refractive_index: complex,
-    size_parameter: float,
-) -> complex:
-    """Return the electric Mie coefficient ``a_l`` for a homogeneous sphere.
-
-    The Riccati--Bessel expression is Eq. (4.56) of Bohren and Huffman,
-    *Absorption and Scattering of Light by Small Particles* (1983).  The
-    caller supplies the relative refractive index ``n_p / n_m`` and the
-    medium size parameter ``x = k_m a``.
-    """
-    if not isinstance(multipole_order, int) or multipole_order < 1:
-        raise ValueError("multipole_order must be an integer of at least 1")
-    _require_finite_positive(size_parameter, name="size_parameter")
-    if not (
-        np.isfinite(relative_refractive_index.real)
-        and np.isfinite(relative_refractive_index.imag)
-    ):
-        raise ValueError("relative_refractive_index must be finite")
-    if relative_refractive_index == 0.0:
-        raise ValueError("relative_refractive_index must not be zero")
-
-    x = complex(size_parameter)
-    mx = relative_refractive_index * x
-    numerator = (
-        relative_refractive_index
-        * _riccati_psi(multipole_order, mx)
-        * _riccati_psi_derivative(multipole_order, x)
-        - _riccati_psi(multipole_order, x)
-        * _riccati_psi_derivative(multipole_order, mx)
-    )
-    denominator = (
-        relative_refractive_index
-        * _riccati_psi(multipole_order, mx)
-        * _outgoing_riccati_hankel_derivative(multipole_order, x)
-        - _outgoing_riccati_hankel(multipole_order, x)
-        * _riccati_psi_derivative(multipole_order, mx)
-    )
-    if not np.isfinite(denominator) or denominator == 0.0:
-        raise FloatingPointError("electric Mie coefficient is singular")
-
-    coefficient = numerator / denominator
-    if not np.isfinite(coefficient):
-        raise FloatingPointError("electric Mie coefficient is non-finite")
-    return complex(coefficient)
 
 
 def calculate_electric_dipole_mie_coefficient(
@@ -205,24 +130,36 @@ def calculate_electric_dipole_mie_coefficient(
     用いる。Mie 係数の式と位相規約はモジュール docstring の Bohren & Huffman
     の記法に従う。
     """
-    return calculate_electric_mie_coefficient(
-        multipole_order=1,
-        relative_refractive_index=relative_refractive_index,
-        size_parameter=size_parameter,
-    )
+    _require_finite_positive(size_parameter, name="size_parameter")
+    if not (
+        np.isfinite(relative_refractive_index.real)
+        and np.isfinite(relative_refractive_index.imag)
+    ):
+        raise ValueError("relative_refractive_index must be finite")
+    if relative_refractive_index == 0.0:
+        raise ValueError("relative_refractive_index must not be zero")
 
-
-def calculate_electric_quadrupole_mie_coefficient(
-    *,
-    relative_refractive_index: complex,
-    size_parameter: float,
-) -> complex:
-    """Return the electric-quadrupole Mie coefficient ``a_2``."""
-    return calculate_electric_mie_coefficient(
-        multipole_order=2,
-        relative_refractive_index=relative_refractive_index,
-        size_parameter=size_parameter,
+    x = complex(size_parameter)
+    mx = relative_refractive_index * x
+    numerator = (
+        relative_refractive_index
+        * _riccati_psi_one(mx)
+        * _riccati_psi_one_derivative(x)
+        - _riccati_psi_one(x) * _riccati_psi_one_derivative(mx)
     )
+    denominator = (
+        relative_refractive_index
+        * _riccati_psi_one(mx)
+        * _outgoing_riccati_hankel_one_derivative(x)
+        - _outgoing_riccati_hankel_one(x) * _riccati_psi_one_derivative(mx)
+    )
+    if not np.isfinite(denominator) or denominator == 0.0:
+        raise FloatingPointError("electric-dipole Mie coefficient is singular")
+
+    coefficient = numerator / denominator
+    if not np.isfinite(coefficient):
+        raise FloatingPointError("electric-dipole Mie coefficient is non-finite")
+    return complex(coefficient)
 
 
 def _drude_permittivity(
@@ -353,68 +290,6 @@ def calculate_fcda_polarizability(
         wave_number_m_inv=wave_number_m_inv,
         particle_permittivity=particle_permittivity,
         electric_dipole_mie_coefficient=coefficient,
-        polarizability_si=complex(polarizability_si),
-        kreibig_correction_applied=apply_kreibig_correction,
-    )
-
-
-def calculate_electric_quadrupole_polarizability(
-    *,
-    wavelength_m: float,
-    diameter_m: float,
-    medium_refractive_index: float,
-    optical_constants: OpticalConstants,
-    apply_kreibig_correction: bool = False,
-    kreibig_parameters: KreibigParameters | None = None,
-) -> ElectricQuadrupolePolarizability:
-    """Calculate the SI electric-quadrupole polarizability of one Au sphere.
-
-    This uses the same Johnson--Christy material data, optional Kreibig
-    correction, host-medium convention, and ``exp(-i omega t)`` convention as
-    :func:`calculate_fcda_polarizability`.  The electric Mie coefficient
-    ``a_2`` is converted using
-
-    ``alpha_q = 120 pi i epsilon_0 epsilon_m a_2 / k_m^5``.
-
-    The normalization is Eq. (16) of Evlyukhin et al., *Physical Review B*
-    85, 245411 (2012), DOI: 10.1103/PhysRevB.85.245411.  It is intentionally
-    not part of the default FCDA path; callers must explicitly opt in to the
-    experimental dipole--quadrupole approximation.
-    """
-    dipole_result = calculate_fcda_polarizability(
-        wavelength_m=wavelength_m,
-        diameter_m=diameter_m,
-        medium_refractive_index=medium_refractive_index,
-        optical_constants=optical_constants,
-        apply_kreibig_correction=apply_kreibig_correction,
-        kreibig_parameters=kreibig_parameters,
-    )
-    particle_refractive_index = _passive_refractive_index_from_permittivity(
-        dipole_result.particle_permittivity
-    )
-    coefficient = calculate_electric_quadrupole_mie_coefficient(
-        relative_refractive_index=particle_refractive_index
-        / medium_refractive_index,
-        size_parameter=dipole_result.wave_number_m_inv * diameter_m / 2.0,
-    )
-    medium_relative_permittivity = medium_refractive_index**2
-    polarizability_si = (
-        120.0
-        * math.pi
-        * 1j
-        * VACUUM_PERMITTIVITY_F_PER_M
-        * medium_relative_permittivity
-        * coefficient
-        / dipole_result.wave_number_m_inv**5
-    )
-    if not np.isfinite(polarizability_si):
-        raise FloatingPointError("electric quadrupole polarizability is non-finite")
-
-    return ElectricQuadrupolePolarizability(
-        wavelength_m=wavelength_m,
-        wave_number_m_inv=dipole_result.wave_number_m_inv,
-        particle_permittivity=dipole_result.particle_permittivity,
-        electric_quadrupole_mie_coefficient=coefficient,
         polarizability_si=complex(polarizability_si),
         kreibig_correction_applied=apply_kreibig_correction,
     )

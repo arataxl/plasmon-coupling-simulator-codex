@@ -1,12 +1,7 @@
 window.PlasmonInputForm = (() => {
-  const maximumParticleCount = 50;
-  const maximumQcmParticleCount = 20;
-  const expandedClassicalMinimumGapNm = 5;
+  const maximumParticleCount = 20;
   const minimumDiameterNm = 2;
   const maximumDiameterNm = 100;
-  const exactMieMinimumDiameterNm = 2;
-  const exactMieMaximumDiameterNm = 500;
-  const exactMieMode = "exact_mie";
   const minimumGapNm = 0.5;
   const sphereLatitudeSegments = 16;
   const sphereLongitudeSegments = 16;
@@ -62,16 +57,6 @@ window.PlasmonInputForm = (() => {
     return numberFromInput(document.getElementById(id));
   }
 
-  function isExactMieMode() {
-    return document.getElementById("simulation-mode").value === exactMieMode;
-  }
-
-  function diameterLimits() {
-    return isExactMieMode()
-      ? { minimum: exactMieMinimumDiameterNm, maximum: exactMieMaximumDiameterNm }
-      : { minimum: minimumDiameterNm, maximum: maximumDiameterNm };
-  }
-
   function formatFormValue(value, field) {
     if (!Number.isFinite(value)) {
       return "";
@@ -105,12 +90,6 @@ window.PlasmonInputForm = (() => {
   function validateParticles(candidateParticles) {
     const errors = [];
     const warnings = [];
-    const exactMie = isExactMieMode();
-    const { minimum, maximum } = diameterLimits();
-    if (exactMie && candidateParticles.length !== 1) {
-      errors.push(message("validation.exactMieParticleCount"));
-      return { errors, warnings };
-    }
     if (candidateParticles.length < 1 || candidateParticles.length > maximumParticleCount) {
       errors.push(message("validation.particleCount", { maximumParticleCount }));
       return { errors, warnings };
@@ -119,14 +98,14 @@ window.PlasmonInputForm = (() => {
       if (!Number.isFinite(particle.diameter_nm)) {
         errors.push(message("validation.diameterRequired", { index: index + 1 }));
       } else if (
-        particle.diameter_nm < minimum ||
-        particle.diameter_nm > maximum
+        particle.diameter_nm < minimumDiameterNm ||
+        particle.diameter_nm > maximumDiameterNm
       ) {
         errors.push(
           message("validation.diameterRange", {
             index: index + 1,
-            minimumDiameterNm: minimum,
-            maximumDiameterNm: maximum,
+            minimumDiameterNm,
+            maximumDiameterNm,
           }),
         );
       }
@@ -142,9 +121,6 @@ window.PlasmonInputForm = (() => {
       });
     });
     if (errors.length > 0) {
-      return { errors, warnings };
-    }
-    if (exactMie) {
       return { errors, warnings };
     }
     for (let left = 0; left < candidateParticles.length; left += 1) {
@@ -180,17 +156,6 @@ window.PlasmonInputForm = (() => {
               leftIndex: left + 1,
               rightIndex: right + 1,
               surfaceGapNm: formattedSurfaceGapNm,
-            }),
-          );
-        }
-        if (
-          candidateParticles.length > maximumQcmParticleCount
-          && surfaceGapNm <= expandedClassicalMinimumGapNm
-        ) {
-          errors.push(
-            message("validation.largeCdaGap", {
-              maximumQcmParticleCount,
-              minimumGapNm: expandedClassicalMinimumGapNm,
             }),
           );
         }
@@ -275,19 +240,9 @@ window.PlasmonInputForm = (() => {
     };
   }
 
-  function sphereMeshResolution(particleCount) {
-    return particleCount > maximumQcmParticleCount
-      ? { latitudeSegments: 8, longitudeSegments: 12 }
-      : {
-        latitudeSegments: sphereLatitudeSegments,
-        longitudeSegments: sphereLongitudeSegments,
-      };
-  }
-
-  function createSphereMesh(particle, particleIndex, particleCount) {
+  function createSphereMesh(particle, particleIndex) {
     const radiusNm = particle.diameter_nm / 2.0;
-    const { latitudeSegments, longitudeSegments } = sphereMeshResolution(particleCount);
-    const verticesPerLatitude = longitudeSegments + 1;
+    const verticesPerLatitude = sphereLongitudeSegments + 1;
     const x = [];
     const y = [];
     const z = [];
@@ -295,20 +250,20 @@ window.PlasmonInputForm = (() => {
     const j = [];
     const k = [];
 
-    for (let latitude = 0; latitude <= latitudeSegments; latitude += 1) {
-      const polarAngle = (Math.PI * latitude) / latitudeSegments;
+    for (let latitude = 0; latitude <= sphereLatitudeSegments; latitude += 1) {
+      const polarAngle = (Math.PI * latitude) / sphereLatitudeSegments;
       const sinPolarAngle = Math.sin(polarAngle);
       const cosPolarAngle = Math.cos(polarAngle);
-      for (let longitude = 0; longitude <= longitudeSegments; longitude += 1) {
-        const azimuthAngle = (2.0 * Math.PI * longitude) / longitudeSegments;
+      for (let longitude = 0; longitude <= sphereLongitudeSegments; longitude += 1) {
+        const azimuthAngle = (2.0 * Math.PI * longitude) / sphereLongitudeSegments;
         x.push(particle.x_nm + radiusNm * sinPolarAngle * Math.cos(azimuthAngle));
         y.push(particle.y_nm + radiusNm * sinPolarAngle * Math.sin(azimuthAngle));
         z.push(particle.z_nm + radiusNm * cosPolarAngle);
       }
     }
 
-    for (let latitude = 0; latitude < latitudeSegments; latitude += 1) {
-      for (let longitude = 0; longitude < longitudeSegments; longitude += 1) {
+    for (let latitude = 0; latitude < sphereLatitudeSegments; latitude += 1) {
+      for (let longitude = 0; longitude < sphereLongitudeSegments; longitude += 1) {
         const topLeft = latitude * verticesPerLatitude + longitude;
         const topRight = topLeft + 1;
         const bottomLeft = topLeft + verticesPerLatitude;
@@ -349,10 +304,6 @@ window.PlasmonInputForm = (() => {
     };
   }
 
-  function particleNumberLabelsVisible() {
-    return document.getElementById("show-particle-numbers")?.checked ?? true;
-  }
-
   function renderPreview() {
     const graphElement = document.getElementById("geometry-preview");
     const finiteParticles = readParticles().filter((particle) =>
@@ -366,12 +317,7 @@ window.PlasmonInputForm = (() => {
     }
     const { xRange, yRange, zRange, viewSpanNm } = equalAxisRanges(finiteParticles);
     const labelPositions = finiteParticles.map((particle) => labelPosition(particle, viewSpanNm));
-    const labelText = particleNumberLabelsVisible()
-      ? finiteParticles.map((_, index) => String(index + 1))
-      : finiteParticles.map(() => "");
-    const sphereTraces = finiteParticles.map((particle, index) =>
-      createSphereMesh(particle, index, finiteParticles.length),
-    );
+    const sphereTraces = finiteParticles.map((particle, index) => createSphereMesh(particle, index));
     // Plotly の 3D テキストにはアウトライン属性がないため、少し大きな暗色テキストを
     // 背面に重ねて、背景ボックスなしの読みやすい縁取りとして扱う。
     const labelOutlineTrace = {
@@ -380,7 +326,7 @@ window.PlasmonInputForm = (() => {
       x: labelPositions.map((position) => position.x),
       y: labelPositions.map((position) => position.y),
       z: labelPositions.map((position) => position.z),
-      text: labelText,
+      text: finiteParticles.map((_, index) => String(index + 1)),
       textposition: "middle center",
       textfont: {
         color: "#071521",
@@ -396,7 +342,7 @@ window.PlasmonInputForm = (() => {
       x: labelPositions.map((position) => position.x),
       y: labelPositions.map((position) => position.y),
       z: labelPositions.map((position) => position.z),
-      text: labelText,
+      text: finiteParticles.map((_, index) => String(index + 1)),
       customdata: finiteParticles.map((particle) => [
         particle.diameter_nm,
         particle.x_nm,
@@ -458,11 +404,6 @@ window.PlasmonInputForm = (() => {
     input.step = "0.1";
     input.value = formatFormValue(value, field);
     input.dataset.field = field;
-    if (field === "diameter_nm") {
-      const { minimum, maximum } = diameterLimits();
-      input.min = String(minimum);
-      input.max = String(maximum);
-    }
     input.setAttribute("aria-label", particleFieldLabel(field));
     input.addEventListener("input", refreshGeometry);
     return input;
@@ -487,7 +428,7 @@ window.PlasmonInputForm = (() => {
       removeButton.type = "button";
       removeButton.className = "compact-button";
       removeButton.textContent = t("coordinates.remove");
-      removeButton.disabled = particles.length === 1 || isExactMieMode();
+      removeButton.disabled = particles.length === 1;
       removeButton.addEventListener("click", () => {
         particles = readParticles();
         particles.splice(index, 1);
@@ -497,43 +438,12 @@ window.PlasmonInputForm = (() => {
       row.append(actionCell);
       body.append(row);
     });
-    document.getElementById("add-particle").disabled =
-      isExactMieMode() || particles.length >= maximumParticleCount;
+    document.getElementById("add-particle").disabled = particles.length >= maximumParticleCount;
     refreshGeometry();
   }
 
   function setParticles(nextParticles) {
-    particles = nextParticles.slice(0, isExactMieMode() ? 1 : maximumParticleCount);
-    renderParticleRows();
-  }
-
-  function applySimulationMode() {
-    const exactMie = isExactMieMode();
-    document.querySelectorAll(".multi-particle-only").forEach((element) => {
-      element.hidden = exactMie;
-    });
-    document.getElementById("exact-mie-mode-help").hidden = !exactMie;
-    const limits = diameterLimits();
-    const currentParticles = readParticles();
-    const sourceParticle = currentParticles[0] ?? {
-      diameter_nm: limits.minimum,
-      x_nm: 0,
-      y_nm: 0,
-      z_nm: 0,
-    };
-    const safeDiameter = Number.isFinite(sourceParticle.diameter_nm)
-      ? Math.min(Math.max(sourceParticle.diameter_nm, limits.minimum), limits.maximum)
-      : limits.minimum;
-    particles = (exactMie ? [sourceParticle] : currentParticles).map((particle) => ({
-      ...particle,
-      diameter_nm: Number.isFinite(particle.diameter_nm)
-        ? Math.min(Math.max(particle.diameter_nm, limits.minimum), limits.maximum)
-        : safeDiameter,
-    }));
-    if (exactMie) {
-      particles[0] = { ...particles[0], x_nm: 0, y_nm: 0, z_nm: 0 };
-      document.getElementById("experimental-quadrupole-coupling").checked = false;
-    }
+    particles = nextParticles.slice(0, maximumParticleCount);
     renderParticleRows();
   }
 
@@ -600,7 +510,6 @@ window.PlasmonInputForm = (() => {
     try {
       const minimumSurfaceGapNm = numberValue("random-minimum-gap-nm");
       const maximumSurfaceGapNm = numberValue("random-maximum-gap-nm");
-      const particleCount = numberValue("random-particle-count");
       if (
         Number.isFinite(minimumSurfaceGapNm) &&
         Number.isFinite(maximumSurfaceGapNm) &&
@@ -608,18 +517,8 @@ window.PlasmonInputForm = (() => {
       ) {
         throw window.PlasmonI18n.createLocalizedError("validation.randomGapRange");
       }
-      if (
-        Number.isFinite(particleCount)
-        && particleCount > maximumQcmParticleCount
-        && minimumSurfaceGapNm < expandedClassicalMinimumGapNm
-      ) {
-        throw window.PlasmonI18n.createLocalizedError("validation.largeCdaMinimumGap", {
-          maximumQcmParticleCount,
-          minimumGapNm: expandedClassicalMinimumGapNm,
-        });
-      }
       const response = await window.PlasmonApi.generateRandomCluster({
-        particle_count: particleCount,
+        particle_count: numberValue("random-particle-count"),
         mean_diameter_nm: numberValue("random-mean-diameter-nm"),
         minimum_surface_gap_nm: minimumSurfaceGapNm,
         maximum_surface_gap_nm: maximumSurfaceGapNm,
@@ -632,9 +531,6 @@ window.PlasmonInputForm = (() => {
   }
 
   function addParticle() {
-    if (isExactMieMode()) {
-      return;
-    }
     const currentParticles = readParticles();
     if (currentParticles.length >= maximumParticleCount) {
       return;
@@ -677,9 +573,7 @@ window.PlasmonInputForm = (() => {
       );
     }
     const polarization = polarizationChoice === "x" ? [1, 0, 0] : [0, 1, 0];
-    const simulationMode = document.getElementById("simulation-mode").value;
-    const payload = {
-      simulation_mode: simulationMode,
+    return {
       material: "Au",
       particles: candidateParticles,
       medium: {
@@ -696,17 +590,7 @@ window.PlasmonInputForm = (() => {
         end_wavelength_nm: endWavelengthNm,
         step_nm: stepNm,
       },
-      smoothing_level: (() => {
-        const level = document.getElementById("smoothing-toggle").value;
-        return level === "off" ? null : level;
-      })(),
     };
-    if (simulationMode !== exactMieMode) {
-      payload.experimental_quadrupole_coupling = document.getElementById(
-        "experimental-quadrupole-coupling",
-      ).checked;
-    }
-    return payload;
   }
 
   function initializeTabs() {
@@ -729,9 +613,7 @@ window.PlasmonInputForm = (() => {
   }
 
   function initialize() {
-    document.getElementById("simulation-mode").addEventListener("change", applySimulationMode);
     document.getElementById("medium-preset").addEventListener("change", updateMediumInput);
-    document.getElementById("show-particle-numbers").addEventListener("change", renderPreview);
     document.getElementById("apply-dimer").addEventListener("click", () => {
       applyDimer().catch((error) => showPresetError("dimer", error));
     });
@@ -760,7 +642,6 @@ window.PlasmonInputForm = (() => {
     document.getElementById("random-maximum-gap-nm").min = String(
       numberValue("random-minimum-gap-nm"),
     );
-    applySimulationMode();
     applyDimer().catch((error) => showPresetError("dimer", error));
   }
 

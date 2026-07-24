@@ -12,7 +12,7 @@ from src.services.job_manager import SimulationJobManager
 
 @lru_cache(maxsize=1)
 def get_optical_constants() -> OpticalConstants:
-    """既定のMcPeak et al. (2015) Au光学定数をプロセス内で一度だけ読む。"""
+    """Johnson and ChristyのAu光学定数をプロセス内で一度だけ読む。"""
     return load_au_optical_constants()
 
 

@@ -71,8 +71,6 @@ AGENTS.mdの記述を更新すること。
 - Test 1〜6はそれぞれ `test_mie_reference.py`、`test_cda_isolated_limit.py`、
   `test_dimer_coupling.py`、`test_qcm_safety.py`、
   `test_multiparticle_stability.py`、`test_io_reproducibility.py` に対応付ける。
-- Test 5は3、5、10、20粒子に加え、`experimental/post-submission` の古典CDA限定拡張として
-  50粒子（全粒子対のgapが5 nm超、QCMなし）を検証する。21〜50粒子はSSE計算経路に限定する。
 - QCMの4層採用は、gap 0.5、0.7、0.9 nmでの3→4層の感度確認と4→5層の合否判定を
   満たした場合だけ許可する。暫定表の出典・有効範囲・読取誤差もTest 4で検証する。
 

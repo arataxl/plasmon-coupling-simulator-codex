@@ -1,26 +1,17 @@
 <!doctype html>
-<html lang="ja">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title data-i18n="document.title">Plasmonic Coupling Simulator</title>
-    <link rel="icon" href="data:," />
-    <style>
-      html[data-ui-ready="false"] body { visibility: hidden; }
-    </style>
-    <script>
-      document.documentElement.dataset.uiReady = "false";
-    </script>
-    <link rel="stylesheet" href="/static/css/app.css?v=20260723-7" />
+    <link rel="stylesheet" href="/static/css/app.css" />
     <script defer src="/static/vendor/plotly-2.24.1.min.js"></script>
-    <script defer src="/static/js/i18n.js?v=20260723-7"></script>
-    <script defer src="/static/js/api_client.js?v=20260723-7"></script>
-    <script defer src="/static/js/input_form.js?v=20260723-7"></script>
-    <script defer src="/static/js/progress.js?v=20260723-7"></script>
-    <script defer src="/static/js/history.js?v=20260723-7"></script>
-    <script defer src="/static/js/history_comparison.js?v=20260723-7"></script>
-    <script defer src="/static/js/results.js?v=20260723-7"></script>
-    <script defer src="/static/js/app.js?v=20260723-7"></script>
+    <script defer src="/static/js/i18n.js"></script>
+    <script defer src="/static/js/api_client.js"></script>
+    <script defer src="/static/js/input_form.js"></script>
+    <script defer src="/static/js/progress.js"></script>
+    <script defer src="/static/js/results.js"></script>
+    <script defer src="/static/js/app.js"></script>
   </head>
   <body>
     <header class="site-header">
@@ -46,26 +37,13 @@
             <p class="section-kicker" data-i18n="input.kicker">CONFIGURATION</p>
             <h2 id="input-title" data-i18n="input.title">計算条件</h2>
           </div>
+          <span class="input-limit" data-i18n="input.limit">最大20粒子</span>
         </div>
-        <p class="form-help input-help">
-          <span data-i18n="input.help">プリセットまたは個別の3D座標を入力し、計算前に配置と表面間ギャップを確認してください。</span>
-          <span class="input-scope-note" data-i18n="input.limit">最大50粒子（21粒子以上は古典CDA・全gap &gt; 5 nm）</span>
+        <p class="form-help" data-i18n="input.help">
+          プリセットまたは個別の3D座標を入力し、計算前に配置と表面間ギャップを確認してください。
         </p>
 
         <form id="simulation-form">
-          <fieldset class="simulation-mode-settings">
-            <legend data-i18n="mode.legend">Calculation mode</legend>
-            <label>
-              <span data-i18n="mode.label">Mode</span>
-              <select id="simulation-mode" name="simulation-mode">
-                <option value="cda" data-i18n="mode.cda">Multi-particle CDA (2-100 nm per sphere)</option>
-                <option value="exact_mie" data-i18n="mode.exactMie">Single particle: exact Mie theory (2-500 nm)</option>
-              </select>
-            </label>
-            <p id="exact-mie-mode-help" class="form-help" data-i18n="mode.exactMieHelp" hidden>
-              Calculates one homogeneous Au sphere with all electric and magnetic Mie orders. CDA, QCM, and the experimental quadrupole approximation are not used. For 2-100 nm, use it to compare with the close single-particle CDA approximation. Coordinates affect only the shared preview.
-            </p>
-          </fieldset>
           <div class="configuration-tabs" role="tablist" data-i18n-aria-label="tabs.label" aria-label="計算条件の分類">
             <button
               id="particle-tab-button"
@@ -95,7 +73,7 @@
           </div>
 
           <section id="particle-tab" class="tab-panel" role="tabpanel" aria-labelledby="particle-tab-button" data-tab-panel>
-            <fieldset class="multi-particle-only">
+            <fieldset>
               <legend data-i18n="preset.legend">粒子配置プリセット</legend>
               <div class="preset-accordion-list">
                 <details class="preset-accordion">
@@ -139,7 +117,7 @@
                   <div class="preset-card" data-i18n-aria-label="preset.randomAria" aria-label="ランダムクラスタのプリセット">
                     <label>
                       <span data-i18n="preset.particleCount">粒子数</span>
-                      <input id="random-particle-count" type="number" min="1" max="50" step="1" value="5" />
+                      <input id="random-particle-count" type="number" min="1" max="20" step="1" value="5" />
                     </label>
                     <label>
                       <span data-i18n="preset.meanDiameter">平均径 (nm)</span>
@@ -185,7 +163,7 @@
                   <tbody id="particle-rows"></tbody>
                 </table>
               </div>
-              <button id="add-particle" class="secondary-button multi-particle-only" type="button" data-i18n="coordinates.add">粒子を追加（最大50個）</button>
+              <button id="add-particle" class="secondary-button" type="button" data-i18n="coordinates.add">粒子を追加（最大20個）</button>
               <p id="geometry-validation" class="geometry-validation" role="status" aria-live="polite"></p>
             </fieldset>
           </section>
@@ -196,11 +174,11 @@
               <div class="input-grid">
                 <label>
                   <span data-i18n="optics.startWavelength">開始波長 (nm)</span>
-                  <input id="start-wavelength-nm" type="number" min="300" max="1700" step="1" value="450" required />
+                  <input id="start-wavelength-nm" type="number" min="200" max="1500" step="1" value="450" required />
                 </label>
                 <label>
                   <span data-i18n="optics.endWavelength">終了波長 (nm)</span>
-                  <input id="end-wavelength-nm" type="number" min="300" max="1700" step="1" value="850" required />
+                  <input id="end-wavelength-nm" type="number" min="200" max="1500" step="1" value="850" required />
                 </label>
                 <label>
                   <span data-i18n="optics.step">刻み (nm)</span>
@@ -233,16 +211,6 @@
                 プリセットは固定実屈折率として扱います。平面波の伝搬方向・波長依存の偏光・角度はこのMVPでは扱いません。
               </p>
             </fieldset>
-            <fieldset class="experimental-approximation-settings multi-particle-only">
-              <legend data-i18n="experimental.legend">Experimental approximation</legend>
-              <label class="experimental-toggle">
-                <input id="experimental-quadrupole-coupling" type="checkbox" />
-                <span data-i18n="experimental.quadrupoleLabel">Experimental: approximate quadrupole coupling</span>
-              </label>
-              <p class="form-help" data-i18n="experimental.quadrupoleHelp">
-                Off by default. This incomplete electric dipole--quadrupole model is for qualitative near-infrared trend exploration only.
-              </p>
-            </fieldset>
           </section>
         </form>
 
@@ -265,10 +233,6 @@
               <h2 id="geometry-preview-title" data-i18n="preview.title">3D配置プレビュー</h2>
               <p data-i18n="preview.description">粒子径をnm座標系の球として表示します。マウスホイールで拡大・縮小、ドラッグで回転し、モードバーのPanで移動できます。</p>
             </div>
-            <label class="preview-label-toggle">
-              <input id="show-particle-numbers" type="checkbox" checked />
-              <span data-i18n="preview.showParticleNumbers">粒子番号を表示</span>
-            </label>
           </div>
           <div id="geometry-preview" class="geometry-preview" data-i18n-aria-label="preview.aria" aria-label="粒子配置の3Dプレビュー"></div>
         </section>
@@ -299,69 +263,7 @@
               </dl>
             </details>
             <ul id="warning-list" class="warning-list" aria-live="polite"></ul>
-            <label id="result-smoothing-control" class="result-smoothing-control" hidden>
-              <span data-i18n="result.smoothingLabel">スムージング（Savitzky-Golay）</span>
-              <input id="smoothing-toggle" type="hidden" value="medium" />
-              <select id="result-smoothing">
-                <option value="off" data-i18n="result.smoothingOff">オフ</option>
-                <option value="low" data-i18n="result.smoothingLow">低（±20 nm）</option>
-                <option value="medium" selected data-i18n="result.smoothingMedium">中（約40 nm）</option>
-                <option value="high" data-i18n="result.smoothingHigh">高（±70 nm）</option>
-                <option value="very_high" data-i18n="result.smoothingVeryHigh">超高（±100 nm）</option>
-                <option value="extreme" data-i18n="result.smoothingExtreme">極高（±150 nm）</option>
-              </select>
-            </label>
             <div id="spectrum-plot" class="spectrum-plot" data-i18n-aria-label="result.spectrumAria" aria-label="CDAスペクトルのグラフ"></div>
-            <section class="history-panel" aria-labelledby="history-title">
-              <div class="history-heading">
-                <div>
-                  <p class="section-kicker" data-i18n="history.kicker">LOCAL HISTORY</p>
-                  <h3 id="history-title" data-i18n="history.title">Calculation history</h3>
-                  <p data-i18n="history.description">The latest 30 completed calculations are stored only in this browser.</p>
-                </div>
-                <div class="history-actions">
-                  <button id="history-compare" type="button" class="secondary-button" disabled data-i18n="history.compare">Compare selected spectra</button>
-                  <button id="history-select-all" type="button" class="secondary-button" disabled data-i18n="history.selectAll">すべて選択</button>
-                  <button id="history-deselect-all" type="button" class="secondary-button" disabled data-i18n="history.deselectAll">すべて解除</button>
-                  <button id="history-download-all" type="button" class="secondary-button" disabled data-i18n="history.downloadAll">Download all CSV</button>
-                  <button id="history-clear" type="button" class="secondary-button" disabled data-i18n="history.clear">Clear all</button>
-                </div>
-              </div>
-              <fieldset class="history-comparison-settings">
-                <legend data-i18n="history.comparisonSettings">Comparison display</legend>
-                <label>
-                  <span data-i18n="history.quantity">Cross section</span>
-                  <select id="history-compare-quantity">
-                    <option value="c_ext" data-i18n="result.cExt">Cext</option>
-                    <option value="c_sca" data-i18n="result.cSca">Csca</option>
-                    <option value="c_abs" data-i18n="result.cAbs">Cabs</option>
-                  </select>
-                </label>
-                <label>
-                  <span data-i18n="history.displayMode">Display mode</span>
-                  <select id="history-normalization-mode">
-                    <option value="absolute" data-i18n="history.absolute">Absolute intensity</option>
-                    <option value="peak" data-i18n="history.normalizePeak">Peak-top normalization</option>
-                    <option value="reference" data-i18n="history.normalizeReference">Normalize at wavelength</option>
-                  </select>
-                </label>
-                <label id="history-reference-wavelength-container" hidden>
-                  <span data-i18n="history.referenceWavelength">Reference wavelength (nm)</span>
-                  <input id="history-reference-wavelength-nm" type="number" min="0" step="0.1" inputmode="decimal" />
-                  <small data-i18n="history.referenceHelp">Each spectrum is linearly interpolated at this wavelength and normalized to 1.</small>
-                </label>
-              </fieldset>
-              <p id="history-comparison-error" class="history-comparison-error" role="alert" hidden></p>
-              <div id="history-list" class="history-list" aria-live="polite"></div>
-              <dialog id="history-detail-dialog" class="history-detail-dialog" aria-labelledby="history-detail-title">
-                <div class="history-detail-heading">
-                  <h3 id="history-detail-title" data-i18n="history.detailTitle">Particle details</h3>
-                  <button id="history-detail-close" type="button" class="secondary-button" data-i18n="history.closeDetails">Close</button>
-                </div>
-                <p id="history-detail-summary" class="history-detail-summary"></p>
-                <ol id="history-detail-particles" class="history-detail-particles"></ol>
-              </dialog>
-            </section>
         </section>
       </div>
     </main>

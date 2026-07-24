@@ -11,7 +11,7 @@ from typing import Literal
 
 from src.physics.material_data import OpticalConstants
 from src.physics.qcm import GammaGParameterTable
-from src.schemas.simulation import SimulationRequest
+from src.schemas.simulation import SimulationInput
 from src.services.simulation_service import (
     SimulationCancelledError,
     SimulationServiceError,
@@ -60,7 +60,7 @@ class SimulationJobManager:
 
     def start_job(
         self,
-        simulation: SimulationRequest,
+        simulation: SimulationInput,
         *,
         optical_constants: OpticalConstants,
         qcm_parameter_table: GammaGParameterTable,
@@ -139,7 +139,7 @@ class SimulationJobManager:
         self,
         *,
         job: _SimulationJob,
-        simulation: SimulationRequest,
+        simulation: SimulationInput,
         optical_constants: OpticalConstants,
         qcm_parameter_table: GammaGParameterTable,
     ) -> None:

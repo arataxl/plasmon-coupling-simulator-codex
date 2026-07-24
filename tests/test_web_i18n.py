@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 WEB_ROOT = REPOSITORY_ROOT / "web"
 
@@ -33,27 +34,10 @@ def test_japanese_and_english_translation_catalogues_have_matching_keys() -> Non
         "warning.qcmApplied",
         "warning.qcmClassicalLimit",
         "warning.qcmValidationOverride",
-        "warning.experimentalQuadrupoleCoupling",
-        "experimental.quadrupoleLabel",
-        "mode.exactMie",
-        "mode.exactMieHelp",
-        "validation.exactMieParticleCount",
         "actions.calculate",
         "actions.cancel",
         "preset.maximumSurfaceGap",
         "api.randomClusterUnavailable",
-        "result.cExt",
-        "result.cSca",
-        "result.cAbs",
-        "result.smoothingLabel",
-        "result.smoothingOff",
-        "result.smoothingMedium",
-        "history.title",
-        "history.quadrupoleOn",
-        "history.quadrupoleOff",
-        "history.selectAll",
-        "history.deselectAll",
-        "preview.showParticleNumbers",
     } <= japanese_keys
 
 
@@ -73,25 +57,17 @@ def test_i18n_loader_precedes_ui_modules() -> None:
     index = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
 
     assert index.index('/static/js/i18n.js') < index.index('/static/js/input_form.js')
-    assert index.index('/static/js/history.js') < index.index('/static/js/results.js')
-    assert index.index('/static/js/history_comparison.js') < index.index('/static/js/results.js')
     assert 'data-language="ja"' in index
     assert 'data-language="en"' in index
 
 
-def test_japanese_is_the_default_language_and_manual_choice_is_remembered() -> None:
-    """ブラウザlocaleに依存せず、日本語を初期表示し、手動選択を保存する。"""
+def test_english_is_the_fixed_initial_language() -> None:
+    """ブラウザlocaleに依存せず、初回表示はEnglishへ翻訳する。"""
     index = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
     i18n = (WEB_ROOT / "js" / "i18n.js").read_text(encoding="utf-8")
 
-    assert '<html lang="ja">' in index
-    assert 'const defaultLanguage = "ja";' in i18n
-    assert 'const languageStorageKey = "plasmon-coupling-simulator.language.v1";' in i18n
-    assert 'await setLanguage(rememberedLanguage(), { remember: false });' in i18n
-    assert 'rememberLanguage(currentLanguage);' in i18n
-    assert 'document.documentElement.dataset.uiReady = "false";' in index
-    assert 'html[data-ui-ready="false"] body { visibility: hidden; }' in index
-    assert 'document.documentElement.dataset.uiReady = "true";' in i18n
+    assert '<html lang="en">' in index
+    assert 'const defaultLanguage = "en";' in i18n
     assert "navigator.language" not in i18n
 
 
@@ -108,49 +84,6 @@ def test_index_translation_attributes_reference_catalogue_keys() -> None:
     referenced_keys = set(re.findall(r'data-i18n(?:-[a-z-]+)?="([^"]+)"', index))
 
     assert referenced_keys <= _translation_keys("ja")
-
-
-def test_experimental_quadrupole_toggle_is_off_by_default_and_localized() -> None:
-    """The incomplete ED--EQ path must be an explicit, translated opt-in."""
-    index = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
-    input_form = (WEB_ROOT / "js" / "input_form.js").read_text(encoding="utf-8")
-    results = (WEB_ROOT / "js" / "results.js").read_text(encoding="utf-8")
-
-    assert 'id="experimental-quadrupole-coupling" type="checkbox"' in index
-    assert 'data-i18n="experimental.quadrupoleLabel"' in index
-    assert 'payload.experimental_quadrupole_coupling =' in input_form
-    assert "experimental_quadrupole_coupling" in results
-    assert (
-        'experimental_quadrupole_coupling: "warning.experimentalQuadrupoleCoupling"'
-        in results
-    )
-
-
-def test_exact_mie_mode_is_a_distinct_single_particle_choice() -> None:
-    """The exact-Mie path must remain visibly and structurally separate from CDA."""
-    index = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
-    input_form = (WEB_ROOT / "js" / "input_form.js").read_text(encoding="utf-8")
-
-    assert 'id="simulation-mode"' in index
-    assert 'value="exact_mie"' in index
-    assert 'data-i18n="mode.exactMie"' in index
-    assert 'class="multi-particle-only"' in index
-    assert "const exactMieMinimumDiameterNm = 2;" in input_form
-    assert "const exactMieMaximumDiameterNm = 500;" in input_form
-    assert "validation.exactMieParticleCount" in input_form
-    assert "simulation_mode: simulationMode" in input_form
-
-
-def test_experimental_quadrupole_warning_keeps_the_required_japanese_limit_text() -> None:
-    """The opt-in result warning must not be weakened or silently omitted."""
-    with (WEB_ROOT / "js" / "i18n" / "ja.json").open(encoding="utf-8") as source:
-        japanese = json.load(source)
-
-    assert japanese["warning.experimentalQuadrupoleCoupling"] == (
-        "この結果は近似的な電気四極子結合を含みます。磁気多重極を含まないため、"
-        "エネルギー保存則は厳密には満たされません。定量的な精度は保証されず、"
-        "近赤外域での傾向確認のみを目的としています。"
-    )
 
 
 def test_preview_uses_nm_meshes_without_camera_distance_resizing() -> None:
@@ -174,55 +107,6 @@ def test_preview_uses_nm_meshes_without_camera_distance_resizing() -> None:
     assert '"marker.size"' not in input_form
     assert 'tickmode: "linear"' in input_form
     assert "dtick: niceTickStep(range)" in input_form
-    assert "const maximumParticleCount = 50;" in input_form
-    assert "function sphereMeshResolution(particleCount)" in input_form
-    assert "return particleCount > maximumQcmParticleCount" in input_form
-
-
-def test_preview_particle_number_toggle_preserves_text_trace_hovering() -> None:
-    """番号だけを空文字へ切り替え、球とホバー用のトレースは残す。"""
-    index = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
-    input_form = (WEB_ROOT / "js" / "input_form.js").read_text(encoding="utf-8")
-
-    assert 'id="show-particle-numbers" type="checkbox" checked' in index
-    assert 'data-i18n="preview.showParticleNumbers"' in index
-    assert "function particleNumberLabelsVisible()" in input_form
-    assert "const labelText = particleNumberLabelsVisible()" in input_form
-    assert input_form.count("text: labelText,") == 2
-    assert 'addEventListener("change", renderPreview)' in input_form
-
-
-def test_input_limit_is_rendered_once_as_an_inline_scope_note() -> None:
-    """上限説明は一つの通常テキスト要素だけで表示する。"""
-    index = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
-    stylesheet = (WEB_ROOT / "css" / "app.css").read_text(encoding="utf-8")
-    with (WEB_ROOT / "js" / "i18n" / "en.json").open(encoding="utf-8") as source:
-        english = json.load(source)
-    with (WEB_ROOT / "js" / "i18n" / "ja.json").open(encoding="utf-8") as source:
-        japanese = json.load(source)
-
-    assert index.count('data-i18n="input.limit"') == 1
-    assert 'class="input-scope-note" data-i18n="input.limit"' in index
-    assert index.index('data-i18n="input.help"') < index.index('data-i18n="input.limit"')
-    assert "input.limit.lineOne" not in index
-    assert "input.limit.lineTwo" not in index
-    assert "input.limit.lineOne" not in english
-    assert "input.limit.lineTwo" not in japanese
-    assert english["input.limit"] == "Up to 50 particles (more than 20: classical CDA, all gaps > 5 nm)."
-    assert japanese["input.limit"] == "最大50粒子（21粒子以上は古典CDA・全gap > 5 nm）。"
-    assert ".input-limit" not in stylesheet
-    assert ".input-limit-line" not in stylesheet
-
-
-def test_input_limit_note_does_not_use_fixed_badge_css() -> None:
-    """見出し横の固定バッジ用スタイルを再導入しない。"""
-    index = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
-    stylesheet = (WEB_ROOT / "css" / "app.css").read_text(encoding="utf-8")
-
-    assert index.count('data-i18n="input.limit"') == 1
-    assert 'class="input-scope-note" data-i18n="input.limit"' in index
-    assert ".input-limit" not in stylesheet
-    assert ":root[lang=\"en\"] .input-panel .panel-heading" not in stylesheet
 
 
 def test_random_cluster_form_and_request_include_a_maximum_surface_gap() -> None:

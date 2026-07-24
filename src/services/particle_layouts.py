@@ -36,25 +36,6 @@ def _surface_gap_m(
     )
 
 
-def _nearest_surface_gaps_m(
-    positions_m: FloatArray,
-    diameters_m: FloatArray,
-) -> FloatArray:
-    """各粒子について、他粒子との最小表面間ギャップを返す。"""
-    nearest_gaps_m = np.full(len(positions_m), np.inf, dtype=np.float64)
-    for left_index in range(len(positions_m)):
-        for right_index in range(left_index + 1, len(positions_m)):
-            surface_gap_m = _surface_gap_m(
-                positions_m[left_index],
-                positions_m[right_index],
-                float(diameters_m[left_index]),
-                float(diameters_m[right_index]),
-            )
-            nearest_gaps_m[left_index] = min(nearest_gaps_m[left_index], surface_gap_m)
-            nearest_gaps_m[right_index] = min(nearest_gaps_m[right_index], surface_gap_m)
-    return nearest_gaps_m
-
-
 def _round_to_display_grid_m(values_m: FloatArray) -> FloatArray:
     """座標を 0.1 nm 格子へ、符号に対して対称な最近傍丸めで写す。"""
     grid_values = np.abs(values_m) / DISPLAY_COORDINATE_STEP_M
@@ -92,7 +73,7 @@ def round_layout_coordinates_for_display(
     HTML の ``step=0.1`` 入力へ書き込む直前だけに使う表示層用の整形である。
     最近傍丸めで表面間ギャップが小さくなった場合は、一方の粒子を丸め格子上で
     外向きに移し、少なくとも ``target_minimum_surface_gap_m`` を保つ。
-    ``target_maximum_surface_gap_m`` を指定した場合は、丸め後も各粒子の最近接対がその
+    ``target_maximum_surface_gap_m`` を指定した場合は、丸め後も全粒子対がその
     上限を超えないことを検証する。上限を守るために任意の元配置を内側へ変形する
     ことはせず、満たせない条件は明示的にエラーにする。
     生の配置自体が 0.5 nm 未満なら、危険な入力を隠すことなくエラーにする。
@@ -138,14 +119,14 @@ def round_layout_coordinates_for_display(
                 raise ParticleLayoutError(
                     "source layout contains a surface gap below the 0.5 nm model limit"
                 )
-    if target_maximum_surface_gap_m is not None and len(position_array_m) > 1:
-        if np.any(
-            _nearest_surface_gaps_m(position_array_m, diameter_array_m)
-            > target_maximum_surface_gap_m + _DISPLAY_GAP_TOLERANCE_M
-        ):
-            raise ParticleLayoutError(
-                "source layout has a nearest-neighbour gap above the requested maximum"
-            )
+            if (
+                target_maximum_surface_gap_m is not None
+                and raw_gap_m
+                > target_maximum_surface_gap_m + _DISPLAY_GAP_TOLERANCE_M
+            ):
+                raise ParticleLayoutError(
+                    "source layout contains a surface gap above the requested maximum"
+                )
 
     rounded_positions_m = _round_to_display_grid_m(position_array_m)
     maximum_adjustments = max(1, len(rounded_positions_m) ** 2 * 8)
@@ -168,17 +149,23 @@ def round_layout_coordinates_for_display(
             if violation is not None:
                 break
         if violation is None:
-            if (
-                target_maximum_surface_gap_m is not None
-                and len(rounded_positions_m) > 1
-                and np.any(
-                    _nearest_surface_gaps_m(rounded_positions_m, diameter_array_m)
-                    > target_maximum_surface_gap_m + _DISPLAY_GAP_TOLERANCE_M
-                )
-            ):
-                raise ParticleLayoutError(
-                    "rounded layout exceeds the requested nearest-neighbour maximum"
-                )
+            if target_maximum_surface_gap_m is not None:
+                for left_index in range(len(rounded_positions_m)):
+                    for right_index in range(left_index + 1, len(rounded_positions_m)):
+                        rounded_gap_m = _surface_gap_m(
+                            rounded_positions_m[left_index],
+                            rounded_positions_m[right_index],
+                            diameter_array_m[left_index],
+                            diameter_array_m[right_index],
+                        )
+                        if (
+                            rounded_gap_m
+                            > target_maximum_surface_gap_m
+                            + _DISPLAY_GAP_TOLERANCE_M
+                        ):
+                            raise ParticleLayoutError(
+                                "rounded layout exceeds the requested maximum surface gap"
+                            )
             return rounded_positions_m
 
         left_index, right_index = violation
@@ -257,8 +244,7 @@ def generate_random_nonoverlapping_configuration(
     これはValidation Test 5で用いる逐次の棄却サンプリングそのものである。UIの
     ランダムクラスタも同じ関数をAPI経由で使うため、表示用と試験用で異なる乱数配置
     ロジックを持たない。``maximum_surface_gap_m`` を指定した場合は、すべての
-    粒子対で最小表面間ギャップを守りつつ、各粒子が少なくとも一つの最近接対を
-    最大表面間ギャップ内に持つ連結クラスタを生成する。``coordinate_step_m`` は
+    粒子対を最小・最大表面間ギャップの範囲内に収める。``coordinate_step_m`` は
     UI表示用の格子配置だけに使い、Test 5の連続座標生成は既定値 ``None`` のままに
     する。長さはすべてSI単位（m）である。
     """
@@ -299,38 +285,25 @@ def generate_random_nonoverlapping_configuration(
         for _ in range(max_attempts):
             lower_bound_m = np.full(3, -placement_half_width_m, dtype=np.float64)
             upper_bound_m = np.full(3, placement_half_width_m, dtype=np.float64)
-            if maximum_surface_gap_m is not None and particle_index > 0:
-                anchor_index = int(random_generator.integers(0, particle_index))
-                direction = random_generator.normal(size=3)
-                direction_norm = float(np.linalg.norm(direction))
-                if direction_norm == 0.0:
-                    continue
-                minimum_center_distance_m = (
-                    (diameter_m + diameter_array_m[anchor_index]) / 2.0
-                    + minimum_surface_gap_m
-                )
-                maximum_center_distance_m = (
-                    (diameter_m + diameter_array_m[anchor_index]) / 2.0
-                    + maximum_surface_gap_m
-                )
-                center_distance_m = random_generator.uniform(
-                    minimum_center_distance_m,
-                    maximum_center_distance_m,
-                )
-                candidate_position_m = (
-                    positions_m[anchor_index]
-                    + direction / direction_norm * center_distance_m
-                )
-                if coordinate_step_m is not None:
-                    candidate_position_m = (
-                        np.rint(candidate_position_m / coordinate_step_m)
-                        * coordinate_step_m
+            if maximum_surface_gap_m is not None:
+                for other_index in range(particle_index):
+                    maximum_center_distance_m = (
+                        (diameter_m + diameter_array_m[other_index]) / 2.0
+                        + maximum_surface_gap_m
                     )
-                if np.any(candidate_position_m < lower_bound_m) or np.any(
-                    candidate_position_m > upper_bound_m
-                ):
-                    continue
-            elif coordinate_step_m is None:
+                    lower_bound_m = np.maximum(
+                        lower_bound_m,
+                        positions_m[other_index] - maximum_center_distance_m,
+                    )
+                    upper_bound_m = np.minimum(
+                        upper_bound_m,
+                        positions_m[other_index] + maximum_center_distance_m,
+                    )
+            if np.any(lower_bound_m > upper_bound_m):
+                raise ParticleLayoutError(
+                    "could not generate a configuration within the requested gap range"
+                )
+            if coordinate_step_m is None:
                 candidate_position_m = random_generator.uniform(
                     low=lower_bound_m,
                     high=upper_bound_m,
@@ -370,7 +343,11 @@ def generate_random_nonoverlapping_configuration(
                     diameter_m,
                     diameter_array_m[other_index],
                 )
-                if surface_gap_m <= minimum_surface_gap_m:
+                if surface_gap_m <= minimum_surface_gap_m or (
+                    maximum_surface_gap_m is not None
+                    and surface_gap_m
+                    > maximum_surface_gap_m + _LAYOUT_GAP_TOLERANCE_M
+                ):
                     candidate_is_valid = False
                     break
             if candidate_is_valid:

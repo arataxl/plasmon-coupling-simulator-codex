@@ -17,12 +17,6 @@ from src.physics.mie_reference import calculate_single_sphere_spectrum
 
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "mie_reference_baseline.json"
-JOHNSON_CHRISTY_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "data"
-    / "optical_constants"
-    / "au_johnson_christy_1972.csv"
-)
 RELATIVE_TOLERANCE = 1e-6
 _CROSS_SECTION_ABSOLUTE_TOLERANCE_M2 = 1e-30
 _EFFICIENCY_ABSOLUTE_TOLERANCE = 1e-12
@@ -35,10 +29,8 @@ def mie_baseline() -> dict[str, Any]:
 
 
 def test_material_data_rejects_extrapolation() -> None:
-    """既定McPeak CSV外の波長を明示的に拒否する。"""
+    """Johnson and Christy CSV外の波長を明示的に拒否する。"""
     material_data = load_au_optical_constants()
-    assert material_data.source_path.name == "au_mcpeak_2015.csv"
-    assert material_data.wavelength_range_nm == pytest.approx((300.0, 1700.0))
     lower_nm, upper_nm = material_data.wavelength_range_nm
 
     with pytest.raises(WavelengthOutOfRangeError):
@@ -49,7 +41,7 @@ def test_material_data_rejects_extrapolation() -> None:
 
 def test_material_data_interpolates_refractive_index_linearly() -> None:
     """CSVの隣接点の中点で、nとkをそれぞれ線形補間する。"""
-    material_data = load_au_optical_constants(path=JOHNSON_CHRISTY_PATH)
+    material_data = load_au_optical_constants()
     index = 10
     wavelength_nm = (
         material_data.wavelength_nm[index] + material_data.wavelength_nm[index + 1]
@@ -71,7 +63,7 @@ def test_single_au_sphere_matches_mie_baseline(
     diameter_nm: float, mie_baseline: dict[str, Any]
 ) -> None:
     """Test 1の保存則・有限値・固定Mie基準配列の受入基準を検証する。"""
-    material_data = load_au_optical_constants(path=JOHNSON_CHRISTY_PATH)
+    material_data = load_au_optical_constants()
     wavelengths_nm = np.asarray(mie_baseline["wavelength_nm"], dtype=np.float64)
     result = calculate_single_sphere_spectrum(
         wavelengths_m=wavelengths_nm * 1e-9,

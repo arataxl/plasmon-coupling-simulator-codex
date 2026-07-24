@@ -18,7 +18,6 @@ CSV_HEADER = (
     "q_sca",
     "q_abs",
     "geometric_cross_section_m2",
-    "experimental_quadrupole_coupling",
 )
 
 
@@ -38,13 +37,7 @@ def simulation_result_to_csv(result: SimulationResult) -> str:
         spectrum.q_abs,
         strict=True,
     ):
-        writer.writerow(
-            (
-                *values,
-                spectrum.geometric_cross_section_m2,
-                str(result.experimental_quadrupole_metadata.applied).lower(),
-            )
-        )
+        writer.writerow((*values, spectrum.geometric_cross_section_m2))
     return output.getvalue()
 
 

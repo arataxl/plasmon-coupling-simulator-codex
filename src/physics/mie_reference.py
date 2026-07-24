@@ -13,8 +13,6 @@ from src.physics.material_data import OpticalConstants
 
 
 FloatArray: TypeAlias = NDArray[np.float64]
-EXACT_MIE_MIN_DIAMETER_M = 2.0e-9
-EXACT_MIE_MAX_DIAMETER_M = 500.0e-9
 
 
 @dataclass(frozen=True)
@@ -127,40 +125,4 @@ def calculate_single_sphere_spectrum(
         q_ext=q_ext,
         q_sca=q_sca,
         q_abs=q_abs,
-    )
-
-
-def calculate_exact_single_sphere_mie_spectrum(
-    *,
-    wavelengths_m: ArrayLike,
-    diameter_m: float,
-    medium_refractive_index: float,
-    optical_constants: OpticalConstants,
-) -> MieSpectrum:
-    """2--500 nmの単一Au球について全次数Mie解を返す。
-
-    ``miepython`` の球Mie解は、電気係数 ``a_l`` と磁気係数 ``b_l`` を
-    収束打切り次数まで和する。したがって本関数はFCDAの ``a_1`` のみを使う
-    多粒子CDAとは別の、単一・均一球に対する完全Mie参照解である。
-
-    出典：Bohren and Huffman, *Absorption and Scattering of Light by Small
-    Particles*, Ch. 4。波長と直径はSI単位系（m）で受け取る。
-    """
-    # nmからSIへ変換した500 nmは、IEEE 754の丸めで上限の1 ULP外側に
-    # なることがある。nextafterで単位変換由来の丸めだけを許容し、
-    # 物理的な2--500 nm範囲自体は広げない。
-    minimum_diameter_m = np.nextafter(EXACT_MIE_MIN_DIAMETER_M, -np.inf)
-    maximum_diameter_m = np.nextafter(EXACT_MIE_MAX_DIAMETER_M, np.inf)
-    if not np.isfinite(diameter_m) or not (
-        minimum_diameter_m <= diameter_m <= maximum_diameter_m
-    ):
-        raise ValueError(
-            "exact single-sphere Mie mode requires "
-            "2 nm <= diameter_m <= 500 nm"
-        )
-    return calculate_single_sphere_spectrum(
-        wavelengths_m=wavelengths_m,
-        diameter_m=diameter_m,
-        medium_refractive_index=medium_refractive_index,
-        optical_constants=optical_constants,
     )
